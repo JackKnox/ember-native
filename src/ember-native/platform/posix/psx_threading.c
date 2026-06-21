@@ -3,7 +3,10 @@
 
 #include <ember/platform/threading.h>
 
-em_result emplat_thread_create(emplat_thread* thr, PFN_thread_start func, void* arg) {
+// TODO: Cannot yet implement due to limitations with the Ember protocol.
+// TODO: Must not allocate memory just to create thread/mutex/cond, that's just ridiculous.
+
+em_result emplat_thread_create(PFN_thread_start func, void* arg, emplat_thread* out_thr) {
     
 }
 
@@ -15,11 +18,11 @@ b8 emplat_thread_equal(emplat_thread thr0, emplat_thread thr1) {
     
 }
 
-em_result emplat_thread_join(emplat_thread thr, u32* res) {
+em_result emplat_thread_join(emplat_thread thr, void** res) {
     
 }
 
-em_result emplat_mutex_init(emplat_mutex_type type, emplat_mutex* mtx) {
+em_result emplat_mutex_create(emplat_mutex_type type, emplat_mutex* out_mtx) {
     
 }
 
@@ -43,7 +46,7 @@ em_result emplat_mutex_unlock(emplat_mutex* mtx) {
     
 }
 
-em_result emplat_cond_init(emplat_cond* cond) {
+em_result emplat_cond_create(emplat_cond* out_cond) {
     
 }
 
