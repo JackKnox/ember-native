@@ -18,9 +18,43 @@
         }                                                   \
     }
 
+typedef enum vulkan_queue_family {
+    VULKAN_QUEUE_FAMILY_RASTER,
+    VULKAN_QUEUE_FAMILY_COMPUTE,
+    VULKAN_QUEUE_FAMILY_TRANSFER,
+    __VULKAN_QUEUE_FAMILY_COUNT,
+} vulkan_queue_family;
+
+typedef struct vulkan_phys_queue {
+    u32 family_index;
+    b8 enabled;
+} vulkan_phys_queue; 
+
+typedef struct vulkan_phys_device {
+    VkPhysicalDevice handle;
+    VkPhysicalDeviceProperties properties;
+    VkPhysicalDeviceFeatures features;
+    vulkan_phys_queue queue_families[__VULKAN_QUEUE_FAMILY_COUNT];
+    u32 heuristic;
+    emgpu_device_mode enabled_modes;
+} vulkan_phys_device;
+
+typedef struct vulkan_log_queue {
+    VkQueue handle;
+    u32 family_index;
+    b8 enabled;
+} vulkan_log_queue;
+
+typedef struct vulkan_log_device {
+    VkDevice handle;
+    VkCommandPool command_pool;
+    vulkan_log_queue log_queues[__VULKAN_QUEUE_FAMILY_COUNT];
+} vulkan_log_device;
+
 typedef struct vulkan_context {
     VkInstance instance;
     VkAllocationCallbacks* allocator;
+    vulkan_log_device device;
 } vulkan_context;
 
 // Converts Vulkan error code to engine result code.
