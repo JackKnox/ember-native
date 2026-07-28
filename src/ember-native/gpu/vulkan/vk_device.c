@@ -1,12 +1,9 @@
 #include "defines.h"
 #include "vk_types.h"
 
-#include <ember/gpu/device.h>
+#include "utils/darray.h"
 
-u32 score_phys_device(vulkan_phys_device* device) {
-    // TODO
-    return 0;
-}
+#include <ember/gpu/device.h>
 
 em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* allocator, emgpu_device* out_device) {
     // Allocate massive internal context.
@@ -135,36 +132,47 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
     // Just generally useful for iteration.
     u32 combined_modes = (config->required_modes | config->optional_modes);
         
-    u32 curr_heuristic = 0;
+    i32 curr_heuristic = -1;
     for (u32 i = 0; i < physical_device_count; ++i) {
         // Retrieve all useful data about the device for checking later.
         //
         vulkan_phys_device curr_device = {};
         curr_device.handle = physical_devices[i];
-
-        vkGetPhysicalDeviceProperties(curr_device.handle, &curr_device.properties);
-        vkGetPhysicalDeviceFeatures(curr_device.handle, &curr_device.features);
         
+        vulkan_device_from_capabilities(&curr_device, &curr_device.capabilities);
+
         u32 queue_family_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(curr_device.handle, &queue_family_count, NULL);
         VkQueueFamilyProperties* queue_families = darray_from_data(VkQueueFamilyProperties, queue_family_count, NULL, allocator, MEMORY_TAG_RENDERER);
         vkGetPhysicalDeviceQueueFamilyProperties(curr_device.handle, &queue_family_count, queue_families);
 
         for (u32 i = 0; i < queue_family_count; ++i) {
-            // TODO: Take each queue and enter it into data structures.
+            VkQueueFamilyProperties* queue_family = &queue_families[i];
+
+            for (u32 j = 0; j < __VULKAN_QUEUE_FAMILY_COUNT; ++j) {
+                f64 score = score_queue_type(queue_family, (vulkan_queue_family)j);
+
+                if (score > curr_device.queue_families[j].score) {
+                    curr_device.queue_families[j].family_index = i;
+                    curr_device.queue_families[j].score = score;
+                    curr_device.queue_families[j].enabled = EMTRUE;
+                }
+            }
         }
 
-        EM_INFO("Vulkan", "Checking physical device with name: '%s'", curr_device.properties.deviceName);
+        EM_INFO("Vulkan", "Checking physical device with name: '%s'", curr_device.capabilities.device_name);
         
         // We've now collected all the metrics into the data structures, now
         // starting elimating some sub-par devices with configuration.
         //
-
-        curr_device.heuristic = score_phys_device(&curr_device);
+    
+        if (physical_device_count > 0)
+            curr_device.heuristic = score_phys_device(&curr_device);
         
         // The raster mode is basically graphics, enables the rasterisation pipeline
         // on the gpu which is a technique that turns points and connections into pixels
-        // to 'light up' that collide with that shape, therefore rendering it.
+        // to 'light up' that collide with that shape, therefore rendering it. It also
+        // includes running fragments shaders on those pixels to make it look pretty.
         if (combined_modes & EMBER_DEVICE_MODE_RASTER) {
             b8 raster_supported =
                 curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].enabled;
@@ -180,7 +188,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
                     EM_ERROR("Vulkan", "Raster mode requested but unavailable; continuing without raster support.");
                 }
             } else {
-                curr_device.enabled_modes |= EMBER_DEVICE_MODE_RASTER;
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_RASTER;
                 EM_ERROR("Vulkan", "Found raster queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].family_index);
             }
         }
@@ -204,11 +212,11 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
                     EM_ERROR("Vulkan", "Checking device: required compute mode is unavailable (optional).");
                 }
             } else {
-                curr_device.enabled_modes |= EMBER_DEVICE_MODE_COMPUTE;
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_COMPUTE;
                 EM_ERROR("Vulkan", "Found compute queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_COMPUTE].family_index);
             }
         }
-        
+
         // The transfer mode is the easist to understand out of the four, its
         // how to transfer data between the CPU and GPU, this happens through those
         // huge cables coming out your GPU called PCIe cables, transferring does take time
@@ -228,7 +236,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
                     EM_ERROR("Vulkan", "Checking device: required transfer mode is unavailable (optional).");
                 }
             } else {
-                curr_device.enabled_modes |= EMBER_DEVICE_MODE_TRANSFER; 
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_TRANSFER; 
                 EM_ERROR("Vulkan", "Found transfer queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_TRANSFER].family_index);
             }
         }
@@ -242,7 +250,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
         // but on modern GPUs the quality improvement is usually well worth it.
         if (combined_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY) {
             b8 sampler_anisotropy_supported =
-                curr_device.features.samplerAnisotropy;
+                (curr_device.capabilities.max_anisotropy > 0);
 
             // Do some tomfool-ly because Ember requires optional modes.
             if (!sampler_anisotropy_supported ) {
@@ -255,7 +263,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
                     EM_ERROR("Vulkan", "Checking device: required sampler anisotropy mode is unavailable (optional).");
                 }
             } else {
-                curr_device.enabled_modes |= EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY; 
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY; 
             }
         }
     
@@ -268,8 +276,10 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
         EM_ERROR("Vulkan", "No suitable devices were found.");
         return EMBER_RESULT_UNAVAILABLE_API;
     }
-
-    EM_INFO("Vulkan", "Selected physical device: '%s'", chosen_device.properties.deviceName);
+    
+    EM_INFO("Vulkan", "Selected physical device: '%s'", chosen_device.capabilities.device_name);
+    
+    // ----- Logical device creation -------------------------
 
     EM_INFO("Vulkan", "Creating logical device.");
     

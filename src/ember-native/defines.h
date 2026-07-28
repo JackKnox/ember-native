@@ -4,5 +4,3 @@
 
 #include <string.h>
 #include <stdlib.h>
-
-#include "utils/darray.h"

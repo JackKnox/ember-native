@@ -3,6 +3,7 @@
 #include "defines.h"
 
 #include <ember/gpu/device.h>
+#include <ember/gpu/resources.h>
 
 #include <vulkan/vulkan.h>
 
@@ -26,17 +27,18 @@ typedef enum vulkan_queue_family {
 } vulkan_queue_family;
 
 typedef struct vulkan_phys_queue {
+    f64 score;
     u32 family_index;
     b8 enabled;
 } vulkan_phys_queue; 
 
 typedef struct vulkan_phys_device {
     VkPhysicalDevice handle;
-    VkPhysicalDeviceProperties properties;
-    VkPhysicalDeviceFeatures features;
+    
+    emgpu_device_capabilities capabilities;
     vulkan_phys_queue queue_families[__VULKAN_QUEUE_FAMILY_COUNT];
-    u32 heuristic;
-    emgpu_device_mode enabled_modes;
+    
+    i32 heuristic;
 } vulkan_phys_device;
 
 typedef struct vulkan_log_queue {
@@ -47,8 +49,7 @@ typedef struct vulkan_log_queue {
 
 typedef struct vulkan_log_device {
     VkDevice handle;
-    VkCommandPool command_pool;
-    vulkan_log_queue log_queues[__VULKAN_QUEUE_FAMILY_COUNT];
+    VkPhysicalDevice physical;
 } vulkan_log_device;
 
 typedef struct vulkan_context {
@@ -56,6 +57,21 @@ typedef struct vulkan_context {
     VkAllocationCallbacks* allocator;
     vulkan_log_device device;
 } vulkan_context;
+
+typedef struct vulkan_pipeline {
+    VkPipeline handle;
+    VkPipelineLayout layout;
+    VkDescriptorSetLayout descriptor_layout;
+} vulkan_pipeline;
+
+typedef struct vulkan_buffer {
+    VkBuffer handle;
+    VkDeviceMemory memory;
+} vulkan_buffer;
+
+typedef struct vulkan_renderpass {
+    VkRenderPass handle;
+} vulkan_renderpass;
 
 // Converts Vulkan error code to engine result code.
 em_result em_result_from_vulkan_result(VkResult result);
@@ -65,3 +81,37 @@ const char* vulkan_result_string(VkResult result, b8 get_extended);
 
 // Determines whether a Vulkan result represents a success code.
 b8 vulkan_result_is_success(VkResult result);
+
+// Converts format type to a Vulkan format.
+VkFormat vulkan_format_type(emgpu_format format);
+
+// Finds a suitable memory index based on memory requirements, -1 means one could not be found.
+i32 vulkan_memory_index(vulkan_context* context, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags);
+
+// Creates the pipeline and descriptor layouts on top of the pipeline.
+em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allocator, const emgpu_descriptor_desc* descriptors, u32 descriptor_count, emgpu_pipeline* out_pipeline);
+
+// Create a shader stage based on a type and source.
+em_result vulkan_create_shader_stage(emgpu_device* device, em_allocator* allocator, const emgpu_shader_src* shader, VkShaderStageFlags shader_type, VkPipelineShaderStageCreateInfo* out_shader_stage);
+
+// Fill capabilities structure from physical device.
+// TODO: Maybe get rid of this?
+void vulkan_device_from_capabilities(vulkan_phys_device* curr_device, emgpu_device_capabilities* out_capabilities);
+
+// Scores a physical GPU based on its overall usefulness.
+u32 score_phys_device(vulkan_phys_device* device);
+
+// Scores a Vulkan queue family for a specific Ember queue purpose.
+f64 score_queue_type(VkQueueFamilyProperties* queue_family, vulkan_queue_family queue_type);
+
+// Converts load op format to a Vulkan format.
+VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op);
+
+// Converts store op format to a Vulkan format.
+VkAttachmentStoreOp vulkan_store_op_type(emgpu_store_op store_op);
+
+// Converts blend factor to a Vulkan format.
+VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor);
+
+// Converts blend op to a Vulkan format.
+VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op);
