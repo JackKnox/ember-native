@@ -55,7 +55,7 @@ void* system_realloc(em_allocator* allocator, void* block, u64 old_size, u64 new
     return new_ptr;
 }
 
-em_allocator emplat_allocator_default() {
+em_allocator emplat_system_allocator() {
 	em_allocator allocator = {};
 	allocator.alloc = system_malloc;
 	allocator.free = system_free;

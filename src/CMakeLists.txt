@@ -5,4 +5,4 @@ target_include_directories(ember-native PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/emb
 
 # TODO: ember-shared includes the C helpers for Ember so if someone
 # were using ember-native and included the helpers there would be linker errors.
-target_link_libraries(ember-native PUBLIC ember-shared wayland-client)
+target_link_libraries(ember-native PUBLIC ember-shared wayland-client vulkan)
