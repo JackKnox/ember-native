@@ -230,7 +230,7 @@ VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor) {
     return 0;
 }
 
-VkFormat format_to_vulkan_type(emgpu_format format) {
+VkFormat vulkan_format_type(emgpu_format format) {
     switch (format) {
         // --- 8-bit UINT ---
         case EMGPU_FORMAT_R8_UINT:    return VK_FORMAT_R8_UINT;
