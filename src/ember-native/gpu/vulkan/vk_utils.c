@@ -49,7 +49,7 @@ em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allo
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)out_pipeline->internal_data;
 
     if (descriptor_count > 0) {
-        VkDescriptorSetLayoutBinding* descriptor_bindings = darray_reserve(VkDescriptorSetLayoutBinding, descriptor_count, allocator, MEMORY_TAG_RENDERER);
+        VkDescriptorSetLayoutBinding* descriptor_bindings = darray_reserve(VkDescriptorSetLayoutBinding, descriptor_count, allocator);
 
         for (u32 i = 0; i < descriptor_count; ++i) {
             VkDescriptorSetLayoutBinding* binding = darray_push_empty(descriptor_bindings);

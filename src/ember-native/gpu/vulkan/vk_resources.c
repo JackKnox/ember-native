@@ -3,14 +3,14 @@
 
 #include <ember/gpu/resources.h>
 
-em_result emgpu_device_create_buffer(
+em_result emgpu_buffer_create(
     emgpu_device* device, 
     em_allocator* allocator, 
     const emgpu_buffer_config* config, 
     emgpu_buffer* out_buffer) {
     vulkan_context* context = (vulkan_context*)device->internal_context;
 
-    out_buffer->internal_data = mem_allocate(allocator, sizeof(vulkan_buffer), MEMORY_TAG_RENDERER);
+    out_buffer->internal_data = mem_allocate(allocator, sizeof(vulkan_buffer));
     vulkan_buffer* vk_buffer = (vulkan_buffer*)out_buffer->internal_data;
 
     VkBufferCreateInfo buffer_create_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
@@ -66,7 +66,7 @@ em_result emgpu_device_create_buffer(
     return EMBER_RESULT_OK;
 }
 
-em_result emgpu_device_copy_buffer(
+em_result emgpu_buffer_copy(
     emgpu_device* device, 
     emgpu_buffer* src_buffer,
     emgpu_buffer* dst_buffer, 
@@ -75,7 +75,7 @@ em_result emgpu_device_copy_buffer(
     
 }
 
-em_result emgpu_device_upload_to_buffer(
+em_result emgpu_buffer_upload(
     emgpu_device* device, 
     emgpu_buffer* buffer, 
     const void* data, 
@@ -83,14 +83,14 @@ em_result emgpu_device_upload_to_buffer(
     
 }
 
-void emgpu_device_destroy_buffer(
+void emgpu_buffer_destroy(
     emgpu_device* device, 
     em_allocator* allocator, 
     emgpu_buffer* buffer) {
     
 }
 
-em_result emgpu_device_create_texture(
+em_result emgpu_texture_create(
     emgpu_device* device, 
     em_allocator* allocator, 
     const emgpu_texture_config* config, 
@@ -98,7 +98,7 @@ em_result emgpu_device_create_texture(
     
 }
 
-em_result emgpu_device_upload_to_texture(
+em_result emgpu_texture_upload(
     emgpu_device* device, 
     emgpu_texture* texture, 
     const void* data, 
@@ -107,14 +107,14 @@ em_result emgpu_device_upload_to_texture(
     
 }
 
-void emgpu_device_destroy_texture(
+void emgpu_texture_destroy(
     emgpu_device* device, 
     em_allocator* allocator, 
     emgpu_texture* texture) {
     
 }
 
-em_result emgpu_device_update_pipeline_descriptors(
+em_result emgpu_pipeline_upload_descriptors(
     emgpu_device* device, 
     emgpu_pipeline* pipeline, 
     emgpu_update_descriptors* descriptors, 
@@ -122,7 +122,7 @@ em_result emgpu_device_update_pipeline_descriptors(
     
 }
     
-void emgpu_device_destroy_pipeline(
+void emgpu_pipeline_destroy(
     emgpu_device* device, 
     em_allocator* allocator, 
     emgpu_pipeline* pipeline) {

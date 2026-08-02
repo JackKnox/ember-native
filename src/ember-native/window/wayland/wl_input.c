@@ -3,7 +3,7 @@
 
 #include <ember/window/input.h>
 
-em_result emwin_input_init(emwin_desktop* desktop, emwin_input_config* config, emwin_input** out_input) {
+em_result emwin_input_init(emwin_desktop* desktop, emwin_input** out_input) {
     
 }
 

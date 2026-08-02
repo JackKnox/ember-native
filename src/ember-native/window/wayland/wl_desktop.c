@@ -2,6 +2,7 @@
 #include "wl_types.h"
 
 #include <ember/window/desktop.h>
+#include <ember/window/events.h>
 
 void configure_xdg_surface(void* data,
 			  struct xdg_surface* xdg_surface,
@@ -45,10 +46,8 @@ void configure_xdg_toplevel(void *data,
 				break;
 		}
 	}
-
-	if (internal_window->events.on_window_resize != NULL)
-		internal_window->events.on_window_resize(
-			window, internal_window->events.user_data, window->size, maximised);
+    
+    // TODO: Push window resize event.
 }
 
 // Its a little suggestion from Wayland to safely close the window. It can force us tho...
@@ -57,6 +56,7 @@ void close_xdg_toplevel(void *data,
 	emwin_window* window = (emwin_window*)data;
 	wayland_window* internal_window = (wayland_window*)window->internal_context;
 
+    // TODO: Push window close event.
 	internal_window->should_close = EMTRUE;
 }
 
@@ -92,9 +92,9 @@ void registry_global_remove(
 }
 
 em_result emwl_desktop_create(em_allocator* allocator, struct emwin_desktop** out_desktop) {
-    emwin_desktop* desktop = mem_allocate(allocator, sizeof(emwin_desktop), MEMORY_TAG_PLATFORM);
+    emwin_desktop* desktop = mem_allocate(allocator, sizeof(emwin_desktop));
 
-	desktop->internal_context = mem_allocate(allocator, sizeof(wayland_desktop), MEMORY_TAG_PLATFORM);
+	desktop->internal_context = mem_allocate(allocator, sizeof(wayland_desktop));
 	wayland_desktop* internal_desktop = (wayland_desktop*)desktop->internal_context;
 
     internal_desktop->registry_listener.global        = registry_global_add;
@@ -120,11 +120,8 @@ em_result emwl_desktop_create(em_allocator* allocator, struct emwin_desktop** ou
     return EMBER_RESULT_OK;
 }
 
-em_result emwin_desktop_update(emwin_desktop* desktop) {
-	wayland_desktop* internal_desktop = (wayland_desktop*)desktop->internal_context;
-	
-	wl_display_dispatch_pending(internal_desktop->display);
-	return EMBER_RESULT_OK;
+em_endpoint emwin_poll_events(emwin_desktop* desktop, emwin_desktop_event* out_event) {
+
 }
 
 em_result emwin_set_clipboard_text(emwin_desktop* desktop, const char* text) {

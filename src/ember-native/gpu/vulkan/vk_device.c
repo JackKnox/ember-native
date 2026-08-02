@@ -7,14 +7,14 @@
 
 em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* allocator, emgpu_device* out_device) {
     // Allocate massive internal context.
-    out_device->internal_context  = mem_allocate(allocator, sizeof(vulkan_context), MEMORY_TAG_RENDERER);
+    out_device->internal_context  = mem_allocate(allocator, sizeof(vulkan_context));
     vulkan_context* context = (vulkan_context*)out_device->internal_context;
 
     EM_INFO("GPU", "Initialising GPU device with name: %s", config->debug_name);
 
     // Gather creation info.
-	const char** required_extensions = darray_create(const char*, allocator, MEMORY_TAG_RENDERER);
-	const char** required_validation_layers = darray_create(const char*, allocator, MEMORY_TAG_RENDERER);
+	const char** required_extensions = darray_create(const char*, allocator);
+	const char** required_validation_layers = darray_create(const char*, allocator);
 
     // TODO: Gather emgpu_device extension data.
 
@@ -23,7 +23,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
     u32 supported_extension_count = 0;
     vkEnumerateInstanceExtensionProperties(NULL, &supported_extension_count, NULL);
 
-    VkExtensionProperties* supported_extensions = darray_from_data(VkExtensionProperties, supported_extension_count, NULL, allocator, MEMORY_TAG_RENDERER);
+    VkExtensionProperties* supported_extensions = darray_from_data(VkExtensionProperties, supported_extension_count, NULL, allocator);
     vkEnumerateInstanceExtensionProperties(NULL, &supported_extension_count, supported_extensions);
 
     for (u32 i = 0; i < darray_length(required_extensions); ++i) {
@@ -45,7 +45,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
 	u32 supported_layer_count = 0;
 	vkEnumerateInstanceLayerProperties(&supported_layer_count, NULL);
 
-	VkLayerProperties* supported_layers = darray_from_data(VkLayerProperties, supported_layer_count, NULL, allocator, MEMORY_TAG_RENDERER);
+	VkLayerProperties* supported_layers = darray_from_data(VkLayerProperties, supported_layer_count, NULL, allocator);
 	vkEnumerateInstanceLayerProperties(&supported_layer_count, supported_layers);
 
 	for (u32 i = 0; i < darray_length(required_validation_layers); ++i) {
@@ -119,7 +119,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
 
     EM_TRACE("Vulkan", "Enumerated %i physical device(s)", physical_device_count);
     
-    VkPhysicalDevice* physical_devices = darray_from_data(VkPhysicalDevice, physical_device_count, NULL, allocator, MEMORY_TAG_RENDERER);
+    VkPhysicalDevice* physical_devices = darray_from_data(VkPhysicalDevice, physical_device_count, NULL, allocator);
     vkEnumeratePhysicalDevices(context->instance, &physical_device_count, physical_devices);
     
     // We will populate this below, submit to change as we iterate all the devices.
@@ -143,7 +143,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
 
         u32 queue_family_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(curr_device.handle, &queue_family_count, NULL);
-        VkQueueFamilyProperties* queue_families = darray_from_data(VkQueueFamilyProperties, queue_family_count, NULL, allocator, MEMORY_TAG_RENDERER);
+        VkQueueFamilyProperties* queue_families = darray_from_data(VkQueueFamilyProperties, queue_family_count, NULL, allocator);
         vkGetPhysicalDeviceQueueFamilyProperties(curr_device.handle, &queue_family_count, queue_families);
 
         for (u32 i = 0; i < queue_family_count; ++i) {
@@ -286,7 +286,7 @@ em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* all
     // We could of picked the same family index for R/C/T and we can't send duplicates
     // into logical device creation so we need to this complicated double for loop.
     f32 queue_priority = 1.0f;
-    VkDeviceQueueCreateInfo* queue_create_infos = darray_reserve(VkDeviceQueueCreateInfo, __VULKAN_QUEUE_FAMILY_COUNT, allocator, MEMORY_TAG_RENDERER);
+    VkDeviceQueueCreateInfo* queue_create_infos = darray_reserve(VkDeviceQueueCreateInfo, __VULKAN_QUEUE_FAMILY_COUNT, allocator);
 
     for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.queue_families); ++i) {
         vulkan_phys_queue* queue = &chosen_device.queue_families[i];

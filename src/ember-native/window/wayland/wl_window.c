@@ -21,7 +21,7 @@ em_result emwin_window_open(const emwin_window_config* config, em_allocator* all
 
     wayland_desktop* internal_desktop = (wayland_desktop*)desktop->internal_context;
 
-	out_window->internal_context = mem_allocate(allocator, sizeof(wayland_window), MEMORY_TAG_PLATFORM);
+	out_window->internal_context = mem_allocate(allocator, sizeof(wayland_window));
 	wayland_window* internal_window = (wayland_window*)out_window->internal_context;
 
 	out_window->size = config->size;
@@ -29,7 +29,7 @@ em_result emwin_window_open(const emwin_window_config* config, em_allocator* all
 
 	// Copy window title into managed buffer this is so we aren't accessing stale memory later.
 	u32 string_length = (strlen(config->title) + 1) * sizeof(char);
-	out_window->title = mem_allocate(allocator, string_length, MEMORY_TAG_PLATFORM);
+	out_window->title = mem_allocate(allocator, string_length);
 	memcpy(out_window->title, config->title, string_length);
 
 	// Create a wayland surface. A surface is just a managed buffer with an assigned role (Cursor, Window, etc.)

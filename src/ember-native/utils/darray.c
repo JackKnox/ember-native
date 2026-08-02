@@ -1,19 +1,18 @@
 #include "defines.h"
 #include "utils/darray.h"
 
-void* _darray_create(u64 stride, u32 capacity, em_allocator* allocator, memory_tag memtag) {
+void* _darray_create(u64 stride, u32 capacity, em_allocator* allocator) {
     u64 size = stride * capacity;
-    darray_header* new_array = mem_allocate(allocator, sizeof(darray_header) + size, memtag);
+    darray_header* new_array = mem_allocate(allocator, sizeof(darray_header) + size);
     new_array->capacity = capacity;
     new_array->length = 0;
-    new_array->memtag = memtag;
     new_array->stride = stride;
     new_array->allocator = allocator;
     return memset(new_array + 1, 0, size);
 }
 
-void* _darry_from_data(u64 stride, u32 length, const void* from_data, em_allocator* allocator, memory_tag memtag) {
-    void* new_array = _darray_create(stride, length, allocator, memtag);
+void* _darry_from_data(u64 stride, u32 length, const void* from_data, em_allocator* allocator) {
+    void* new_array = _darray_create(stride, length, allocator);
     _darray_header(new_array)->length = length;
 
     if (from_data)
@@ -23,7 +22,7 @@ void* _darry_from_data(u64 stride, u32 length, const void* from_data, em_allocat
 
 void darray_destroy(void* array) {
     darray_header* hdr = _darray_header(array);
-    mem_free(hdr->allocator, hdr, sizeof(darray_header) + hdr->stride * hdr->capacity, hdr->memtag);
+    mem_free(hdr->allocator, hdr, sizeof(darray_header) + hdr->stride * hdr->capacity);
 }
 
 void* _darray_push(void** out_array, const void* value_ptr) {
@@ -85,7 +84,7 @@ darray_header* _darray_header(void* array) {
 
 void* darray_resize(void* array, u32 new_size) {
     darray_header* hdr = _darray_header(array);
-    void* new_array = _darray_create(hdr->stride, new_size, hdr->allocator, hdr->memtag);
+    void* new_array = _darray_create(hdr->stride, new_size, hdr->allocator);
     darray_length(new_array) = new_size < hdr->length ? new_size : hdr->length; // = min()
 
     memcpy(new_array, array, darray_length(new_array) * hdr->stride);

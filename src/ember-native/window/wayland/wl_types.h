@@ -26,6 +26,4 @@ typedef struct wayland_window {
     struct xdg_surface* xdg_surface;
     struct xdg_toplevel* xdg_toplevel;
     b8 should_close;
-
-    emwin_window_events events;
 } wayland_window;

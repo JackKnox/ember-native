@@ -5,14 +5,14 @@
 
 #include <ember/gpu/raster.h>
 
-em_result emgpu_device_create_renderpass(
+em_result emgpu_renderpass_create(
     emgpu_device* device, 
     em_allocator* allocator, 
     const emgpu_renderpass_config* config, 
     emgpu_renderpass* out_renderpass) {
     vulkan_context* context = (vulkan_context*)device->internal_context;
 
-    out_renderpass->internal_data = mem_allocate(allocator, sizeof(vulkan_renderpass), MEMORY_TAG_RENDERER);
+    out_renderpass->internal_data = mem_allocate(allocator, sizeof(vulkan_renderpass));
     vulkan_renderpass* vk_renderpass = (vulkan_renderpass*)out_renderpass->internal_data;
 
     out_renderpass->attachment_count = config->attachment_count;
@@ -20,7 +20,7 @@ em_result emgpu_device_create_renderpass(
     // Vulkan requires attachment descriptions and references separately. 
     // Attachment descriptions describe *what* each attachment is, while attachment references describe *how* a subpass uses them.
     VkAttachmentReference* colour_attachments = NULL;
-    VkAttachmentDescription* attachment_descs = darray_reserve(VkAttachmentDescription, out_renderpass->attachment_count, allocator, MEMORY_TAG_RENDERER);
+    VkAttachmentDescription* attachment_descs = darray_reserve(VkAttachmentDescription, out_renderpass->attachment_count, allocator);
  
     // Convert each Ember attachment into its Vulkan equivalent.
     for (u32 i = 0; i < out_renderpass->attachment_count; ++i) {
@@ -32,7 +32,7 @@ em_result emgpu_device_create_renderpass(
         switch (attachment->type) {
             case EMBER_ATTACHMENT_TYPE_COLOUR:
                 if (!colour_attachments) 
-                    colour_attachments = darray_create(VkAttachmentReference, allocator, MEMORY_TAG_RENDERER);
+                    colour_attachments = darray_create(VkAttachmentReference, allocator);
                 
                 reference         = darray_push_empty(colour_attachments);
                 desc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -115,7 +115,7 @@ void emgpu_device_destroy_renderpass(
     
 }
 
-em_result emgpu_device_create_raster_pipeline(
+em_result emgpu_raster_pipeline_create(
     emgpu_device* device, 
     em_allocator* allocator, 
     const emgpu_raster_pipeline_config* config, 
@@ -123,7 +123,7 @@ em_result emgpu_device_create_raster_pipeline(
     emgpu_pipeline* out_pipeline) {
     vulkan_context* context = (vulkan_context*)device->internal_context;
 
-    out_pipeline->internal_data = mem_allocate(allocator, sizeof(vulkan_pipeline), MEMORY_TAG_RENDERER);
+    out_pipeline->internal_data = mem_allocate(allocator, sizeof(vulkan_pipeline));
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)out_pipeline->internal_data;
     
     // Marks this as a raster pipeline.
@@ -159,7 +159,7 @@ em_result emgpu_device_create_raster_pipeline(
     // Vertex attributes are used to describe the layout of any assigned vertex buffer to the pipeline.
     // It describes vector, matrices, interger, floats etc. It takes the vertex buffer, gets the current vertex
     // and then interpretes it as the attributes given here.
-    VkVertexInputAttributeDescription* attributes = darray_reserve(VkVertexInputAttributeDescription, em_vertex_config.attribute_count, NULL, MEMORY_TAG_RENDERER);
+    VkVertexInputAttributeDescription* attributes = darray_reserve(VkVertexInputAttributeDescription, em_vertex_config.attribute_count, NULL);
     u64 attribute_stride = 0;
 
     for (u32 i = 0; i < em_vertex_config.attribute_count; ++i) {

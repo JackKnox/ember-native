@@ -3,14 +3,14 @@
 
 #include <ember/gpu/compute.h>
 
-em_result emgpu_device_create_compute_pipeline(
+em_result emgpu_compute_pipeline_create(
     emgpu_device* device, 
     em_allocator* allocator, 
     const emgpu_compute_pipeline_config* config, 
     emgpu_pipeline* out_compute_pipeline) {
     vulkan_context* context = (vulkan_context*)device->internal_context;
 
-    out_compute_pipeline->internal_data = mem_allocate(allocator, sizeof(vulkan_pipeline), MEMORY_TAG_RENDERER);
+    out_compute_pipeline->internal_data = mem_allocate(allocator, sizeof(vulkan_pipeline));
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)out_compute_pipeline->internal_data;
     
     // Marks this as a compute pipeline.

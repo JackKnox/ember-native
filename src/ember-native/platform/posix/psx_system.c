@@ -7,9 +7,7 @@
 #include <time.h>
 #include <dlfcn.h>
 
-void* system_malloc(em_allocator* allocator, u64 size, u64 alignment, memory_tag tag) {
-	mem_report(size, tag);
-
+void* system_malloc(em_allocator* allocator, u64 size, u64 alignment) {
 	if (!alignment) {
 		return malloc(size);
 	}
@@ -21,21 +19,11 @@ void* system_malloc(em_allocator* allocator, u64 size, u64 alignment, memory_tag
     return ptr;
 }
 
-void system_free(em_allocator* allocator, void* block, u64 size, u64 alignment, memory_tag tag) {
-	mem_report_free(size, tag);
-
-	if (!alignment) {
-		free(block);
-		return;
-	}
-
+void system_free(em_allocator* allocator, void* block, u64 size, u64 alignment) {
     free(block);
 }
 
-void* system_realloc(em_allocator* allocator, void* block, u64 old_size, u64 new_size, u64 alignment, memory_tag tag) {
-	mem_report_free(old_size, tag);
-	mem_report(new_size, tag);
-
+void* system_realloc(em_allocator* allocator, void* block, u64 old_size, u64 new_size, u64 alignment) {
     if (!alignment) {
         return realloc(block, new_size);
     }
