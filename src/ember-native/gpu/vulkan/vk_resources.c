@@ -23,9 +23,9 @@ em_result emgpu_buffer_create(
     if (config->usage & EMBER_BUFFER_USAGE_INDEX)   buffer_create_info.usage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     if (config->usage & EMBER_BUFFER_USAGE_UNIFORM) buffer_create_info.usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     if (config->usage & EMBER_BUFFER_USAGE_STORAGE) buffer_create_info.usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    // TODO: Just add a transfer destination flag to Ember?
     if (config->usage & EMBER_BUFFER_USAGE_TRANSFER_SRC) buffer_create_info.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    
+    if (config->usage & EMBER_BUFFER_USAGE_TRANSFER_DST) buffer_create_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
     // A buffer is just 'some data', a completely raw, linear array of bytes used for any kind of data.
     // Unlike a image, buffers hold unstructured arrays of bytes, making them ideal for geometric data or arbitrary numbers.
     CHECK_VKRESULT(
@@ -66,22 +66,6 @@ em_result emgpu_buffer_create(
     return EMBER_RESULT_OK;
 }
 
-em_result emgpu_buffer_copy(
-    emgpu_device* device, 
-    emgpu_buffer* src_buffer,
-    emgpu_buffer* dst_buffer, 
-    u64 src_offset, u64 dst_offset, 
-    u64 region) {
-    
-}
-
-em_result emgpu_buffer_upload(
-    emgpu_device* device, 
-    emgpu_buffer* buffer, 
-    const void* data, 
-    u64 offset, u64 region) {
-    
-}
 
 void emgpu_buffer_destroy(
     emgpu_device* device, 
@@ -95,15 +79,6 @@ em_result emgpu_texture_create(
     em_allocator* allocator, 
     const emgpu_texture_config* config, 
     emgpu_texture* out_texture) {
-    
-}
-
-em_result emgpu_texture_upload(
-    emgpu_device* device, 
-    emgpu_texture* texture, 
-    const void* data, 
-    uvec2 start_offset, 
-    uvec2 region) {
     
 }
 

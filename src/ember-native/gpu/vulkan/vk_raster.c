@@ -5,121 +5,10 @@
 
 #include <ember/gpu/raster.h>
 
-em_result emgpu_renderpass_create(
-    emgpu_device* device, 
-    em_allocator* allocator, 
-    const emgpu_renderpass_config* config, 
-    emgpu_renderpass* out_renderpass) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
-
-    out_renderpass->internal_data = mem_allocate(allocator, sizeof(vulkan_renderpass));
-    vulkan_renderpass* vk_renderpass = (vulkan_renderpass*)out_renderpass->internal_data;
-
-    out_renderpass->attachment_count = config->attachment_count;
-    
-    // Vulkan requires attachment descriptions and references separately. 
-    // Attachment descriptions describe *what* each attachment is, while attachment references describe *how* a subpass uses them.
-    VkAttachmentReference* colour_attachments = NULL;
-    VkAttachmentDescription* attachment_descs = darray_reserve(VkAttachmentDescription, out_renderpass->attachment_count, allocator);
- 
-    // Convert each Ember attachment into its Vulkan equivalent.
-    for (u32 i = 0; i < out_renderpass->attachment_count; ++i) {
-        const emgpu_attachment_config* attachment = &config->attachments[i];
-        
-        VkAttachmentDescription* desc = darray_push_empty(attachment_descs);
-        VkAttachmentReference* reference = NULL;
-
-        switch (attachment->type) {
-            case EMBER_ATTACHMENT_TYPE_COLOUR:
-                if (!colour_attachments) 
-                    colour_attachments = darray_create(VkAttachmentReference, allocator);
-                
-                reference         = darray_push_empty(colour_attachments);
-                desc->finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-                break;
-
-            default:
-                EM_ASSERT(EMFALSE && "Unsupported attachment type in renderpass");
-                continue;
-        }
-        
-        desc->format = vulkan_format_type(attachment->format); 
-        desc->samples = VK_SAMPLE_COUNT_1_BIT; 
-        desc->loadOp = vulkan_load_op_type(attachment->load_op); 
-        desc->storeOp = vulkan_store_op_type(attachment->store_op); 
-        desc->stencilLoadOp = vulkan_load_op_type(attachment->stencil_load_op); 
-        desc->stencilStoreOp = vulkan_store_op_type(attachment->stencil_store_op);
-
-        // The previous contents of the attachment are discarded.
-        // TODO: Allow preserving previous contents when required.
-        desc->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        if (desc->format == VK_FORMAT_UNDEFINED) {
-            EM_ERROR("Vulkan", "Unsupported format in renderpass attachment descriptor.");
-            return EMBER_RESULT_UNSUPPORTED_FORMAT;
-        }
-
-        reference->attachment = i;
-        reference->layout = desc->finalLayout;
-        
-        // Presentable attachments finish in the presentation engine
-        // instead of remaining in a colour attachment layout.
-        if (attachment->presentable) 
-            desc->finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    }
-
-    // Additional subpasses can later be used for deferred rendering,
-    // post-processing, G-buffer generation, etc.
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = colour_attachments ? darray_length(colour_attachments) : 0;
-    subpass.pColorAttachments    = colour_attachments;
-    
-    // Synchronise external operations with the beginning of the subpass.
-    // This ensures colour attachment writes are properly ordered before rendering begins.
-    VkSubpassDependency dependency = {};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0; 
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0; 
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependency.dependencyFlags = 0;
-    
-    // Assemble the Vulkan renderpass description.
-    VkRenderPassCreateInfo pass_create_info = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-    pass_create_info.attachmentCount = darray_length(attachment_descs);
-    pass_create_info.pAttachments    = attachment_descs;
-    pass_create_info.subpassCount    = 1;
-    pass_create_info.pSubpasses      = &subpass;
-    pass_create_info.dependencyCount = 1;
-    pass_create_info.pDependencies   = &dependency;
-    
-    // A renderpass describes the attachments used during rendering,
-    // how they transition between layouts, and the ordering of the
-    // rendering operations that use them.
-    CHECK_VKRESULT(
-        vkCreateRenderPass(context->device.handle, &pass_create_info, context->allocator, &vk_renderpass->handle),
-        "Failed to create renderpass");
-    
-    // Temporary construction data is no longer needed.
-    darray_destroy(attachment_descs);
-    if (colour_attachments) darray_destroy(colour_attachments);
-    return EMBER_RESULT_OK;
-}
-
-void emgpu_device_destroy_renderpass(
-    emgpu_device* device, 
-    em_allocator* allocator, 
-    emgpu_renderpass* renderpass) {
-    
-}
-
 em_result emgpu_raster_pipeline_create(
     emgpu_device* device, 
     em_allocator* allocator, 
     const emgpu_raster_pipeline_config* config, 
-    emgpu_renderpass* bound_renderpass, 
     emgpu_pipeline* out_pipeline) {
     vulkan_context* context = (vulkan_context*)device->internal_context;
 
@@ -211,6 +100,22 @@ em_result emgpu_raster_pipeline_create(
         case EMBER_PRIMITIVE_TYPE_TRIANGLE_STRIP: input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     }
 
+    VkFormat* colour_formats = darray_reserve(VkFormat, config->colour_attachment_count, allocator);
+    
+    for (u32 i = 0; i < config->colour_attachment_count; ++i) {
+        VkFormat format = vulkan_format_type(config->colour_attachments[i]);
+        if (format == VK_FORMAT_UNDEFINED) {
+            EM_ERROR("Vulkan", "Unsupported format in colour attachments");
+            return EMBER_RESULT_UNSUPPORTED_FORMAT;
+        }
+
+        darray_push(colour_formats, format);
+    }
+
+    VkPipelineRenderingCreateInfo rendering_info = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+    rendering_info.colorAttachmentCount = darray_length(colour_formats);
+    rendering_info.pColorAttachmentFormats = colour_formats;
+
     // Dynamic state enables certain values to Vulkan at command buffer record-time. This
     // is so the pipeline isn't coupled to a certain window size or etc.
     VkDynamicState dynamic_states[] = {
@@ -233,9 +138,8 @@ em_result emgpu_raster_pipeline_create(
     pipeline_create_info.pColorBlendState = &blend_state;
     pipeline_create_info.pDynamicState = &dynamic_state;
     
-    vulkan_renderpass* renderpass = (vulkan_renderpass*)bound_renderpass->internal_data;
-    pipeline_create_info.renderPass = renderpass->handle;
-    
+    pipeline_create_info.pNext = &rendering_info;
+
     // A shader module is just a container for the SPIR-V shader, it has to be created so it can
     // be compiled and possibly cached by the user.
     em_result result = vulkan_create_shader_stage(device, allocator, &config->vertex_shader, VK_SHADER_STAGE_VERTEX_BIT, &shader_stages[0]);
@@ -262,5 +166,7 @@ em_result emgpu_raster_pipeline_create(
 
     for (u32 i = 0; EM_ARRAYSIZE(shader_stages); ++i)
         vkDestroyShaderModule(context->device.handle, shader_stages[i].module, context->allocator);
+    darray_destroy(colour_formats);
+    darray_destroy(attributes);
     return EMBER_RESULT_OK;
 }

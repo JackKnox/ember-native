@@ -5,7 +5,7 @@
 
 #include <ember/gpu/device.h>
 
-em_result emgpu_device_init(const emgpu_device_config* config, em_allocator* allocator, emgpu_device* out_device) {
+em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* config, emgpu_device* out_device) {
     // Allocate massive internal context.
     out_device->internal_context  = mem_allocate(allocator, sizeof(vulkan_context));
     vulkan_context* context = (vulkan_context*)out_device->internal_context;

@@ -3,7 +3,7 @@
 
 #include <ember/window/window.h>
 
-em_result emwin_window_open(const emwin_window_config* config, em_allocator* allocator, emwin_window* out_window, emwin_desktop** out_desktop) {
+em_result emwin_window_open(em_allocator* allocator, const emwin_window_config* config, emwin_window* out_window, emwin_desktop** out_desktop) {
 	// If there isn't already a desktop object, create one.
     emwin_desktop* desktop = config->desktop;
 

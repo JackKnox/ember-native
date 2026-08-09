@@ -120,7 +120,7 @@ em_result emwl_desktop_create(em_allocator* allocator, struct emwin_desktop** ou
     return EMBER_RESULT_OK;
 }
 
-em_endpoint emwin_poll_events(emwin_desktop* desktop, emwin_desktop_event* out_event) {
+em_result emwin_poll_events(emwin_desktop* desktop, emwin_desktop_event* out_event) {
 
 }
 

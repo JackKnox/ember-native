@@ -5,39 +5,34 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <ember/platform/logger.h>
+
 #ifndef EM_LOG
-// General logging function for Ember.
-#define EM_LOG(level, subsystem, message, ...) emlog_console(level, "Ember/" subsystem, message __VA_OPT__(,) __VA_ARGS__)
+#define EM_LOG(level, subsystem, message, ...) emplat_printf(level, message __VA_OPT__(,) __VA_ARGS__)
 #endif
 
 #ifndef EM_FATAL
-/** @brief Logs an fatal-level message. */
-#define EM_FATAL(subsystem, message, ...) EM_LOG(LOG_LEVEL_FATAL, subsystem, message, __VA_ARGS__)
+#define EM_FATAL(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_FATAL, subsystem, message, __VA_ARGS__)
 #endif
 
 #ifndef EM_ERROR
-/** @brief Logs an error-level message. */
-#define EM_ERROR(subsystem, message, ...) EM_LOG(LOG_LEVEL_ERROR, subsystem, message, __VA_ARGS__)
+#define EM_ERROR(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_ERROR, subsystem, message, __VA_ARGS__)
 #endif
 
 #ifndef EM_WARN
-/** @brief Logs an warn-level message. */
-#define EM_WARN(subsystem, message, ...) EM_LOG(LOG_LEVEL_WARN, subsystem, message, __VA_ARGS__)
+#define EM_WARN(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_WARN, subsystem, message, __VA_ARGS__)
 #endif
 
 #ifndef EM_INFO
-/** @brief Logs an info-level message. */
-#define EM_INFO(subsystem, message, ...) EM_LOG(LOG_LEVEL_INFO, subsystem, message, __VA_ARGS__)
+#define EM_INFO(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_INFO, subsystem, message, __VA_ARGS__)
 #endif
 
 #ifndef EM_TRACE
-/** @brief Logs an trace-level message. */
-#define EM_TRACE(subsystem, message, ...) EM_LOG(LOG_LEVEL_TRACE, subsystem, message, __VA_ARGS__)
+#define EM_TRACE(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_TRACE, subsystem, message, __VA_ARGS__)
 #endif
 
 #ifndef EM_DEV
-/** @brief Logs an dev-level message. */
-#define EM_DEV(subsystem, message, ...) EM_LOG(LOG_LEVEL_DEV, subsystem, message, __VA_ARGS__)
+#define EM_DEV(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_DEV, subsystem, message, __VA_ARGS__)
 #endif
 
 #if EMBER_DIST
