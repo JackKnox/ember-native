@@ -132,7 +132,6 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     // Just generally useful for iteration.
     u32 combined_modes = (config->required_modes | config->optional_modes);
         
-    i32 curr_heuristic = -1;
     for (u32 i = 0; i < physical_device_count; ++i) {
         // Retrieve all useful data about the device for checking later.
         //
@@ -166,7 +165,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         // starting elimating some sub-par devices with configuration.
         //
     
-        if (physical_device_count > 0)
+        if (physical_device_count > 1)
             curr_device.heuristic = score_phys_device(&curr_device);
         
         // The raster mode is basically graphics, enables the rasterisation pipeline
@@ -185,11 +184,11 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_RASTER) {
-                    EM_ERROR("Vulkan", "Raster mode requested but unavailable; continuing without raster support.");
+                    EM_WARN("Vulkan", "Raster mode requested but unavailable; continuing without raster support.");
                 }
             } else {
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_RASTER;
-                EM_ERROR("Vulkan", "Found raster queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].family_index);
+                EM_INFO("Vulkan", "Found raster queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].family_index);
             }
         }
 
@@ -209,11 +208,11 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_COMPUTE) {
-                    EM_ERROR("Vulkan", "Checking device: required compute mode is unavailable (optional).");
+                    EM_WARN("Vulkan", "Checking device: required compute mode is unavailable (optional).");
                 }
             } else {
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_COMPUTE;
-                EM_ERROR("Vulkan", "Found compute queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_COMPUTE].family_index);
+                EM_INFO("Vulkan", "Found compute queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_COMPUTE].family_index);
             }
         }
 
@@ -233,11 +232,11 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_TRANSFER) {
-                    EM_ERROR("Vulkan", "Checking device: required transfer mode is unavailable (optional).");
+                    EM_WARN("Vulkan", "Checking device: required transfer mode is unavailable (optional).");
                 }
             } else {
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_TRANSFER; 
-                EM_ERROR("Vulkan", "Found transfer queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_TRANSFER].family_index);
+                EM_INFO("Vulkan", "Found transfer queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_TRANSFER].family_index);
             }
         }
         
@@ -250,7 +249,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         // but on modern GPUs the quality improvement is usually well worth it.
         if (combined_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY) {
             b8 sampler_anisotropy_supported =
-                (curr_device.capabilities.max_anisotropy > 0);
+                (curr_device.capabilities.max_anisotropy > 1.0f);
 
             // Do some tomfool-ly because Ember requires optional modes.
             if (!sampler_anisotropy_supported ) {
@@ -260,7 +259,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY) {
-                    EM_ERROR("Vulkan", "Checking device: required sampler anisotropy mode is unavailable (optional).");
+                    EM_WARN("Vulkan", "Checking device: required sampler anisotropy mode is unavailable (optional).");
                 }
             } else {
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY; 
@@ -268,7 +267,8 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         }
     
         // After we've checked the device is suitable, score it against all the other suitable GPUs.
-        if (curr_device.heuristic > curr_heuristic)
+        if (!chosen_device.handle ||
+            curr_device.heuristic > chosen_device.heuristic)
             chosen_device = curr_device;
     }
     

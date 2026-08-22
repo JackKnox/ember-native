@@ -7,8 +7,10 @@
 
 #include <ember/platform/logger.h>
 
+void emnat_printf(emplat_log_level log_level, const char* message, ...);
+
 #ifndef EM_LOG
-#define EM_LOG(level, subsystem, message, ...) emplat_printf(level, message __VA_OPT__(,) __VA_ARGS__)
+#define EM_LOG(level, subsystem, message, ...) emnat_printf(level, message __VA_OPT__(,) __VA_ARGS__)
 #endif
 
 #ifndef EM_FATAL

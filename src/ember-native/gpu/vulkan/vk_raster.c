@@ -5,6 +5,34 @@
 
 #include <ember/gpu/raster.h>
 
+/*
+Each mode needs to describe:
+
+* Basic enabled / disabled value.
+* Device extensions.
+
+*/
+
+typedef struct vulkan_raster_sys {
+    VkQueue queue;
+} vulkan_raster_sys;
+
+b8 vulkan_raster_reqs() {
+    
+}
+
+em_result vulkan_raster_setup() {
+    
+}
+
+em_result vulkan_raster_init() {
+
+}
+
+void vulkan_raster_shutdown() {
+
+}
+
 em_result emgpu_raster_pipeline_create(
     emgpu_device* device, 
     em_allocator* allocator, 
@@ -21,33 +49,50 @@ em_result emgpu_raster_pipeline_create(
     const u32 shader_stage_count = 2; // Includes vertex and fragment shaders.
     VkPipelineShaderStageCreateInfo shader_stages[shader_stage_count] = {};
     
-    emgpu_raster_blend_config em_blend_config = (config->blend_state != NULL ? *config->blend_state : emgpu_raster_blend_default());
-    
-    // This is for one attachment on the bound renderpass.
-    // TODO: Allow for multiple attachments or wait for Vulkan to promote dynamic rendering to core.
-    VkPipelineColorBlendAttachmentState colour_attachment = {};
-    colour_attachment.blendEnable = (config->blend_state != NULL);
-    colour_attachment.srcColorBlendFactor = vulkan_blend_factor_type(em_blend_config.src_colour);
-    colour_attachment.dstColorBlendFactor = vulkan_blend_factor_type(em_blend_config.dst_colour);
-    colour_attachment.colorBlendOp = vulkan_blend_op_type(em_blend_config.colour_op);
-    colour_attachment.srcAlphaBlendFactor = vulkan_blend_factor_type(em_blend_config.src_alpha);
-    colour_attachment.dstAlphaBlendFactor = vulkan_blend_factor_type(em_blend_config.dst_alpha);
-    colour_attachment.alphaBlendOp = vulkan_blend_op_type(em_blend_config.alpha_op);
-    colour_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    
+    VkPipelineColorBlendAttachmentState* colour_attachments = darray_reserve(VkPipelineColorBlendAttachmentState, config->colour_attachment_count, allocator);
+    VkFormat* colour_formats = darray_reserve(VkFormat, config->colour_attachment_count, allocator);
+
+    for (u32 i = 0; i < config->colour_attachment_count; ++i) {
+        const emgpu_pipeline_colour_attachment* attachment = &config->colour_attachments[i]; 
+
+        VkPipelineColorBlendAttachmentState* descriptor = darray_push_empty(colour_attachments);
+        descriptor->blendEnable = attachment->blend_enable;
+        descriptor->srcColorBlendFactor = vulkan_blend_factor_type(attachment->src_colour);
+        descriptor->dstColorBlendFactor = vulkan_blend_factor_type(attachment->dst_colour);
+        descriptor->colorBlendOp = vulkan_blend_op_type(attachment->colour_op);
+        descriptor->srcAlphaBlendFactor = vulkan_blend_factor_type(attachment->src_alpha);
+        descriptor->dstAlphaBlendFactor = vulkan_blend_factor_type(attachment->dst_alpha);
+        descriptor->alphaBlendOp = vulkan_blend_op_type(attachment->alpha_op);
+        descriptor->colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+        VkFormat format = vulkan_format_type(attachment->format);
+        if (format == VK_FORMAT_UNDEFINED) {
+            EM_ERROR("Vulkan", "Unsupported format in colour attachments");
+            return EMBER_RESULT_UNSUPPORTED_FORMAT;
+        }
+
+        darray_push(colour_formats, format);
+    }
+
     // This structure describes blending state, which is seperate to all the other renderpass 
     // transitions and image layouts at the top of this file. It describes what should happen when 
     // two primitive with this same pipeline intersect, usually it blendes the colour together for transpanracy. 
     VkPipelineColorBlendStateCreateInfo blend_state = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
-    blend_state.attachmentCount = 1;
-    blend_state.pAttachments    = &colour_attachment;
+    blend_state.attachmentCount = darray_length(colour_attachments);
+    blend_state.pAttachments    = colour_attachments;
 
-    emgpu_raster_vertex_config em_vertex_config = (config->vertex_input != NULL ? *config->vertex_input : emgpu_raster_vertex_default());
-    
+    VkPipelineRenderingCreateInfo rendering_info = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+    rendering_info.colorAttachmentCount = darray_length(colour_formats);
+    rendering_info.pColorAttachmentFormats = colour_formats;
+
     // Vertex attributes are used to describe the layout of any assigned vertex buffer to the pipeline.
     // It describes vector, matrices, interger, floats etc. It takes the vertex buffer, gets the current vertex
     // and then interpretes it as the attributes given here.
+    emgpu_raster_vertex_config em_vertex_config = { .topology = EMBER_PRIMITIVE_TYPE_TRIANGLE_LIST };
+    if (config->vertex_input)
+        em_vertex_config = *config->vertex_input;
+
     VkVertexInputAttributeDescription* attributes = darray_reserve(VkVertexInputAttributeDescription, em_vertex_config.attribute_count, NULL);
     u64 attribute_stride = 0;
 
@@ -99,22 +144,6 @@ em_result emgpu_raster_pipeline_create(
         case EMBER_PRIMITIVE_TYPE_TRIANGLE_LIST:  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         case EMBER_PRIMITIVE_TYPE_TRIANGLE_STRIP: input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     }
-
-    VkFormat* colour_formats = darray_reserve(VkFormat, config->colour_attachment_count, allocator);
-    
-    for (u32 i = 0; i < config->colour_attachment_count; ++i) {
-        VkFormat format = vulkan_format_type(config->colour_attachments[i]);
-        if (format == VK_FORMAT_UNDEFINED) {
-            EM_ERROR("Vulkan", "Unsupported format in colour attachments");
-            return EMBER_RESULT_UNSUPPORTED_FORMAT;
-        }
-
-        darray_push(colour_formats, format);
-    }
-
-    VkPipelineRenderingCreateInfo rendering_info = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
-    rendering_info.colorAttachmentCount = darray_length(colour_formats);
-    rendering_info.pColorAttachmentFormats = colour_formats;
 
     // Dynamic state enables certain values to Vulkan at command buffer record-time. This
     // is so the pipeline isn't coupled to a certain window size or etc.

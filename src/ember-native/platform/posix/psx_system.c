@@ -2,6 +2,9 @@
 #include "psx_types.h"
 
 #include <ember/platform/system.h>
+#include <ember/platform/logger.h>
+
+#include <stdio.h>
 
 #include <unistd.h>
 #include <time.h>
@@ -49,6 +52,14 @@ em_allocator emplat_system_allocator() {
 	allocator.free = system_free;
 	allocator.realloc = system_realloc;
 	return allocator;
+}
+
+void emplat_print(emplat_log_level log_level, const char* message) {
+    static const char* colours[] = { "\033[1;37;101m", "\033[1;31m", "\033[1;33m", "\033[1;32m", "\033[1;36m" };
+
+    printf("%s%s\033[0m\n",
+        colours[log_level],
+        message);
 }
 
 void emplat_sleep_ms(f64 ms) {
