@@ -1,4 +1,5 @@
 #include "defines.h"
+#include "ember/gpu/types.h"
 #include "vk_types.h"
 
 #include "utils/darray.h"
@@ -176,6 +177,28 @@ f64 score_queue_type(VkQueueFamilyProperties* queue_family, vulkan_queue_family 
     // Ember on whetever multiple queues is a priority and then we'll need to expose
     // hardware queues to Ember and I don't really want to do that.
     return queue_priority / queue_types; //+ log2(queue_family->queueCount);
+}
+
+emgpu_ops_type command_ops_type(cmd_payload_type type) {
+    switch (type) {
+    case COMMAND_BEGIN_COMPUTEPASS: return EMBER_OPER_TYPE_COMPUTE;
+    case COMMAND_DISPATCH:          return EMBER_OPER_TYPE_COMPUTE;
+    case COMMAND_END_COMPUTEPASS:   return EMBER_OPER_TYPE_COMPUTE;
+
+    case COMMAND_BEGIN_RENDERPASS: return EMBER_OPER_TYPE_RASTER;
+    case COMMAND_END_RENDERPASS:   return EMBER_OPER_TYPE_RASTER;
+    case COMMAND_SET_VIEWPORT:     return EMBER_OPER_TYPE_RASTER;
+    case COMMAND_SET_SCISSOR:      return EMBER_OPER_TYPE_RASTER;
+
+    case COMMAND_BIND_RASTER_PIPELINE: return EMBER_OPER_TYPE_RASTER;
+    case COMMAND_BIND_VERTEX_BUFFERS:  return EMBER_OPER_TYPE_RASTER;
+    case COMMAND_BIND_INDEX_BUFFER:    return EMBER_OPER_TYPE_RASTER;
+    case COMMAND_DRAW:                 return EMBER_OPER_TYPE_RASTER;
+
+    case COMMAND_EMPTY_RESOURCE:  return EMBER_OPER_TYPE_UNIVERSAL;
+    case COMMAND_IMPORT_TEXTURE:  return EMBER_OPER_TYPE_UNIVERSAL;
+    case COMMAND_ACQUIRE_SURFACE: return EMBER_OPER_TYPE_UNIVERSAL;
+    }
 }
 
 VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op) {

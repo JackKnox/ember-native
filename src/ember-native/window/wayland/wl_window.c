@@ -3,29 +3,21 @@
 
 #include <ember/window/window.h>
 
-em_result emwin_window_open(em_allocator* allocator, const emwin_window_config* config, emwin_window* out_window, emwin_desktop** out_desktop) {
-	// If there isn't already a desktop object, create one.
-    emwin_desktop* desktop = config->desktop;
-
-    if (desktop == NULL) {
-        em_result result = emwl_desktop_create(allocator, out_desktop);
-        if (result != EMBER_RESULT_OK) {
-            EM_ERROR("Wayland", "Failed to create new desktop object: %s", em_result_string(result, EMFALSE));
+em_result emwin_window_open(em_allocator* allocator, const emwin_window_config* config, emwin_monitor_id id, emwin_window* out_window, emwin_desktop** out_desktop) {
+    if (*out_desktop == NULL) {
+        em_result result = emnat_wayland_desktop_create(allocator, out_desktop);
+        if (result != EMBER_RESULT_OK)
             return result;
-        }
+    } 
 
-        desktop = *out_desktop;
-    } else {
-        *out_desktop = desktop;
-    }
-
-    wayland_desktop* internal_desktop = (wayland_desktop*)desktop->internal_context;
 
 	out_window->internal_context = mem_allocate(allocator, sizeof(wayland_window));
 	wayland_window* internal_window = (wayland_window*)out_window->internal_context;
 
 	out_window->size = config->size;
-	out_window->desktop = desktop;
+	out_window->desktop = *out_desktop;
+
+    wayland_desktop* internal_desktop = (wayland_desktop*)(*out_desktop)->internal_context;
 
 	// Copy window title into managed buffer this is so we aren't accessing stale memory later.
 	u32 string_length = (strlen(config->title) + 1) * sizeof(char);

@@ -2,6 +2,7 @@
 
 #include <ember/platform/logger.h>
 
+#include <stdio.h>
 #include <stdarg.h>
 
 static char message_buf[64] = {};

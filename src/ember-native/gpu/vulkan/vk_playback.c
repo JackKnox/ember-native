@@ -1,10 +1,7 @@
 #include "defines.h"
-#include "ember/gpu/resources.h"
 #include "vk_types.h"
 
 #include "utils/darray.h"
-
-#include "gpu/command_decoder.h"
 
 /*
  * Track resources across pipeline, queues, image layouts and semaphore dependencys.
@@ -27,21 +24,26 @@
  *     * Pipeline barrier
  *     * Binary semaphore
  *     * Renderpass / subpass
- * !NOTE Owner-wide data in resource system.
  */
+
+// Turns a Vulkan command buffer into a proper submission struct. If there is no
+// command buffer provided it creates a temporary one.
+em_result new_command_buffer(vulkan_command_context* ctx, emgpu_ops_type ops, VkCommandBuffer command_buffer, vulkan_command_submission* out_submission) {
+
+}
 
 // Declears a new stack frame as a owner of the following calls to `own_resource`.
 // This is how the system knows where data is being transported and then to insert dependency edges.
 // Resources acquired or 'owned' after this will be handed back at `release_resources` and all sync operations
 // will be operated. The pair of declaring a owner and release resources acts like a code stack.
-void declare_owner(vulkan_command_context* ctx /** ... **/) {
+void declare_owner(vulkan_command_context* ctx, owner_desc* owner) {
 
 }
 
 // This inserts a resource into the system based on the `dst_handle` and the currently
 // set owner. The managed resource handle may refer to any buffer, texture, or framebuffer.
 // The `curr_access` variable refers to the owner own access with the resource, this is used in pipeline barriers.
-void insert_resource(vulkan_command_context* ctx, managed_resource* resource, emgpu_local_resource dst_handle, emgpu_access_flags curr_access) {
+void insert_resource(vulkan_command_context* ctx, emgpu_local_resource dst_handle, emgpu_access_flags curr_access, void* resource) {
 
 }
 
@@ -52,7 +54,7 @@ managed_resource* own_resource(vulkan_command_context* ctx, emgpu_local_resource
 }
 
 // Pops an owner frame from the submit-stack, releases ownership of resources and
-// emits all nessacery dst Vulkan sync opertions.
+// emits all nessacery dst Vulkan sync opertions. If there is no stack frames just return.
 void release_resources(vulkan_command_context* ctx) {
 
 }
@@ -64,102 +66,132 @@ void add_surface(const emgpu_surface* surface) {
 
 }
 
+static void cmd_bind_pipeline(vulkan_command_context* ctx, pipeline_bind_info* info) {
+    vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)info->pipeline->internal_data;
+
+    owner_desc pipeline_owner = {};
+    pipeline_owner.type = COMMAND_OWNER_PIPELINE;
+    pipeline_owner.pipeline = info->pipeline;
+    declare_owner(ctx, &pipeline_owner);
+
+    const emgpu_resource_import* import = info->imports;
+    for (u32 i = 0; i < info->import_count; ++i, ++import)
+        own_resource(ctx, import->resource, import->access_flags);
+
+    const emgpu_resource_export* export = info->exports;
+    for (u32 i = 0; i < info->export_count; ++i, ++export)
+        insert_resource(ctx, export->resource, export->access_flags, (void*)vk_pipeline->descriptors[export->src_binding]);
+
+    ctx->bound_pipeline = EMTRUE;
+
+    vkCmdBindPipeline(ctx->curr_submission->handle, 
+            vulkan_bind_point(ctx->curr_submission->ops_type), 
+            vk_pipeline->handle);
+}
+
+static void cmd_begin_renderpass(vulkan_command_context* ctx, emgpu_renderpass_config* config) {
+    owner_desc renderpass_owner = {};
+    renderpass_owner.type = COMMAND_OWNER_RENDERPASS;
+    //renderpass_owner.renderpass = NULL;
+
+    VkRenderingAttachmentInfo* colour_attachments = darray_reserve(VkRenderingAttachmentInfo, config->colour_attachment_count, ctx->allocator);
+    
+    VkRenderingInfo rendering_info = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+    rendering_info.renderArea.offset = (VkOffset2D) { config->render_origin.x, config->render_origin.y };
+    rendering_info.renderArea.extent = (VkExtent2D) { config->render_size.x, config->render_size.y };
+    rendering_info.layerCount = 1;
+
+    for (u32 i = 0; i < config->colour_attachment_count; ++i) {
+        const emgpu_colour_attachment* attachment = &config->colour_attachments[i];
+
+        VkRenderingAttachmentInfo* vk_attachment = darray_push_empty(colour_attachments);
+        vk_attachment->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+
+        managed_resource* resc = own_resource(ctx, attachment->framebuffer, EMBER_ACCESS_COLOUR_ATTACHMENT_WRITE);
+        vulkan_texture* vk_framebuffer = (vulkan_texture*)resc->framebuffer->internal_data;
+        vk_attachment->imageView = vk_framebuffer->view;
+        vk_attachment->imageLayout = vk_framebuffer->layout;
+        vk_attachment->loadOp = vulkan_load_op_type(attachment->load_op);
+        vk_attachment->storeOp = vulkan_store_op_type(attachment->store_op);
+        vk_attachment->clearValue.color.float32[0] = ((attachment->clear_colour >> 24) & 0xFF) / 255.0f;
+        vk_attachment->clearValue.color.float32[1] = ((attachment->clear_colour >> 16) & 0xFF) / 255.0f;
+        vk_attachment->clearValue.color.float32[2] = ((attachment->clear_colour >> 8)  & 0xFF) / 255.0f;
+        vk_attachment->clearValue.color.float32[3] = ((attachment->clear_colour)       & 0xFF) / 255.0f;
+    }
+
+    rendering_info.colorAttachmentCount = darray_length(colour_attachments);
+    rendering_info.pColorAttachments    = colour_attachments;
+
+    vkCmdBeginRendering(ctx->curr_submission->handle, 
+            &rendering_info);
+
+    darray_destroy(colour_attachments);
+}
+
+static void cmd_bind_vertex_buffers(vulkan_command_context* ctx, u32 count, emgpu_buffer* buffers) {
+    if (count == 1) {
+        VkDeviceSize offset = 0;
+
+        vulkan_buffer* buffer = (vulkan_buffer*)buffers[0].internal_data;
+        vkCmdBindVertexBuffers(ctx->curr_submission->handle, 0, 1, &buffer->handle, &offset);
+        return;
+    }
+}
+
 em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emgpu_command_buffer* commmand_buf) {
     vulkan_command_context ctx = {};
+    ctx.allocator = &device->frame_allocator;
+
+    vulkan_context* context = (vulkan_context*)device->internal_context;
 
     cmd_payload* payload = NULL;
-    while (vulkan_poll_command_buffer(commmand_buf, (u8**) &payload) == EMBER_RESULT_OK) {
+    while (emnat_poll_command_buffer(commmand_buf, (void**)&payload)) {
+        emgpu_ops_type new_ops = command_ops_type(payload->type);
+        if (!ctx.curr_submission || ctx.curr_submission->ops_type != new_ops) {
+            // Null handle allocates a new handle.
+            VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+
+            // The guranteed lifetime of a command buffer is the point of last command buffer
+            // that uses its resources in the submission, past that it can't be used so check for whetever it has any dependecies.
+            if (!ctx.curr_submission || darray_length(ctx.curr_submission->edges) == 0)
+                ctx.curr_submission = context->mode_commandbuffs[new_ops][device->current_frame];
+
+            new_command_buffer(&ctx, new_ops, command_buffer, ctx.curr_submission);
+        }
+
         switch (payload->type) {
-            case COMMAND_BEGIN_COMPUTEPASS: {
-                emgpu_ops_type new_ops = EMBER_OPER_TYPE_COMPUTE;
-                if (ctx.curr_submission.ops_type != new_ops) {
-                    if (ctx.curr_mode_commandbuff[new_ops].submitted)
-                        new_command_buffer(&device->frame_allocator, new_ops, &ctx.curr_submission);
-                    else
-                        ctx.curr_submission = ctx.curr_mode_commandbuf[new_ops];
-                }
-
-                // Resolve dependencys here.
-                for (u32 i = 0; i < payload->begin_computepass.import_resource_count; ++i) {
-                    const emgpu_resource_import* import = &payload->begin_computepass.import_resources[i];
-                    own_resource(&ctx, import->resource, import->access_flags);
-                }
-                
-                // bind compute pipeline.
-                const vulkan_pipeline* comp_pipeline = (const vulkan_pipeline*)payload->begin_computepass.pipeline->internal_data;
-                for (u32 i = 0; i < payload->begin_computepass.export_resource_count; ++i) {
-                    const emgpu_resource_export* export = &payload->begin_computepass.export_resources[i];
-
-                    managed_resource resource = {};
-                    resource.raw = (void*) comp_pipeline.descriptors[export->src_binding];
-                    insert_resource(&ctx, &resource, export->resource, export->access_flags);
-                }
-
-                vkCmdBindPipeline(ctx.curr_submission.handle, VK_PIPELINE_BIND_POINT_COMPUTE, comp_pipeline->handle);
-
-                // TODO: Descriptors.
+            case COMMAND_BEGIN_COMPUTEPASS:
+                cmd_bind_pipeline(&ctx, &payload->begin_computepass);
                 break;
-            }
 
-            case COMMAND_DISPATCH: {
-                vkCmdDispatch(ctx.curr_submission.handle, payload->dispatch.group_size.x, payload->dispatch.group_size.y, payload->dispatch.group_size.z);
+            case COMMAND_DISPATCH:
+                vkCmdDispatch(ctx.curr_submission->handle, 
+                        payload->dispatch.group_size.x, 
+                        payload->dispatch.group_size.y,
+                        payload->dispatch.group_size.z);
                 break;
-            }
 
-            case COMMAND_END_COMPUTEPASS: {
+            case COMMAND_END_COMPUTEPASS:
                 release_resources(&ctx);
                 break;
-            }
 
-            case COMMAND_BEGIN_RENDERPASS: {
-                emgpu_ops_type new_ops = EMBER_OPER_TYPE_RASTER;
-                if (ctx.curr_submission.ops_type != new_ops) {
-                    if (ctx.curr_mode_commandbuff[new_ops].submitted)
-                        new_command_buffer(&device->frame_allocator, new_ops, &ctx.curr_submission);
-                    else
-                        ctx.curr_submission = ctx.curr_mode_commandbuf[new_ops];
-                }
-
-                VkRenderingInfo rendering_info = { VK_STRUCTURE_TYPE_RENDERING_INFO };
-                rendering_info.renderArea.offset = (VkOffset2D) { payload->begin_renderpass.render_origin.x, payload->begin_renderpass.render_origin.y };
-                rendering_info.renderArea.extent = (VkExtent2D) { payload->begin_renderpass.render_size.x, payload->begin_renderpass.render_size.y };
-                rendering_info.layerCount = 1;
-                
-                VkRenderingAttachmentInfo* colour_attachments = darray_reserve(VkRenderingAttachmentInfo, payload->begin_renderpass.colour_attachment_count, &device->frame_allocator);
-                
-                for (u32 i = 0; i < payload->begin_renderpass.colour_attachment_count; ++i) {
-                    const emgpu_colour_attachment* attachment = &payload->begin_renderpass.colour_attachments[i];
-                    
-                    VkRenderingAttachmentInfo* vk_attachment = darray_push_empty(colour_attachments);
-                    vk_attachment->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-                    
-                    managed_resource* framebuffer = own_resource(&ctx, attachment->framebuffer, EMBER_ACCESS_COLOUR_ATTACHMENT_WRITE);
-                    vk_attachment->imageView = framebuffer->view;
-                    //vk_attachment->imageLayout = framebuffer->layout;
-                    vk_attachment->loadOp = vulkan_load_op_type(attachment->load_op);
-                    vk_attachment->storeOp = vulkan_store_op_type(attachment->store_op);
-                    vk_attachment->clearValue.color.float32[0] = ((attachment->clear_colour >> 24) & 0xFF) / 255.0f;
-                    vk_attachment->clearValue.color.float32[1] = ((attachment->clear_colour >> 16) & 0xFF) / 255.0f;
-                    vk_attachment->clearValue.color.float32[2] = ((attachment->clear_colour >> 8)  & 0xFF) / 255.0f;
-                    vk_attachment->clearValue.color.float32[3] = ((attachment->clear_colour)       & 0xFF) / 255.0f;
-                }
-
-                rendering_info.colorAttachmentCount = darray_length(colour_attachments);
-                rendering_info.pColorAttachments    = colour_attachments;
-
-                vkCmdBeginRendering(ctx.curr_submission.handle, &rendering_info);
-                
-                darray_destroy(colour_attachments);
+            case COMMAND_BEGIN_RENDERPASS:
+                cmd_begin_renderpass(&ctx, &payload->begin_renderpass);
                 break;
-            }
+                
+            case COMMAND_END_RENDERPASS:
+                vkCmdEndRendering(ctx.curr_submission->handle);
+                
+                if (ctx.bound_pipeline)
+                    release_resources(&ctx);
+                ctx.bound_pipeline = EMFALSE;
 
-            case COMMAND_END_RENDERPASS: {
-                vkCmdEndRendering(ctx.curr_submission.handle);
                 release_resources(&ctx);
                 break;
-            }
 
-            case COMMAND_SET_VIEWPORT: {
+            case COMMAND_SET_VIEWPORT:
+                ;
+
                 VkViewport viewport = {};
                 viewport.x = (f32)payload->set_viewport.origin.x;
                 viewport.y = (f32)(payload->set_viewport.origin.y + payload->set_viewport.size.y);
@@ -167,79 +199,84 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
                 viewport.height = -(f32)payload->set_viewport.size.y;
                 viewport.minDepth = payload->set_viewport.min_depth;
                 viewport.maxDepth = payload->set_viewport.max_depth;
-                vkCmdSetViewport(ctx.curr_submission.handle, 0, 1, &viewport);
+                vkCmdSetViewport(ctx.curr_submission->handle, 0, 1, &viewport);
                 break;
-            }
 
-            case COMMAND_SET_SCISSOR: {
+            case COMMAND_SET_SCISSOR:
+                ;
+
                 VkRect2D scissor = {};
                 scissor.offset.x = payload->set_scissor.origin.x;
                 scissor.offset.y = payload->set_scissor.origin.y;
                 scissor.extent.width  = payload->set_scissor.size.x;
                 scissor.extent.height = payload->set_scissor.size.y;
-                vkCmdSetScissor(ctx.curr_submission.handle, 0, 1, &scissor);
+                vkCmdSetScissor(ctx.curr_submission->handle, 0, 1, &scissor);
                 break;
-            }
 
-            case COMMAND_BIND_RASTER_PIPELINE: {
-                const vulkan_pipeline* raster_pipeline = (const vulkan_pipeline*)payload->bind_raster_pipeline.pipeline->internal_data;
-                vkCmdBindPipeline(ctx.curr_submission.handle, VK_PIPELINE_BIND_POINT_GRAPHICS, raster_pipeline->handle);
-                ctx.curr_pipeline = payload->bind_raster_pipeline.pipeline;
+            case COMMAND_BIND_RASTER_PIPELINE:
+                if (ctx.bound_pipeline)
+                    release_resources(&ctx);
 
-                // TODO: Descriptors.
-
+                cmd_bind_pipeline(&ctx, &payload->bind_raster_pipeline);
                 break;
-            }
 
-            case COMMAND_BIND_VERTEX_BUFFERS: {
-                if (payload->bind_vertex_buffers.count == 1) {
-                    vulkan_buffer* buffer = (vulkan_buffer*)payload->bind_vertex_buffers.buffers->internal_data;
-                    VkDeviceSize offset = 0;
-                    vkCmdBindVertexBuffers(ctx.curr_submission.handle, 0, 1, &buffer->handle, &offset);
-                }
-                else {
-
-                }
+            case COMMAND_BIND_VERTEX_BUFFERS:
+                cmd_bind_vertex_buffers(&ctx, payload->bind_vertex_buffers.count, payload->bind_vertex_buffers.buffers);
                 break;
-            }
 
-            case COMMAND_BIND_INDEX_BUFFER: {
+            case COMMAND_BIND_INDEX_BUFFER:
+                ;
+
                 vulkan_buffer* buffer = (vulkan_buffer*)payload->bind_index_buffer->internal_data;
-                vkCmdBindIndexBuffer(ctx.curr_submission.handle, buffer->handle, 0, VK_INDEX_TYPE_UINT16);
+                vkCmdBindIndexBuffer(ctx.curr_submission->handle, buffer->handle, 0, VK_INDEX_TYPE_UINT16);
                 break;
-            }
 
-            case COMMAND_DRAW: {
-                vkCmdDraw(ctx.curr_submission.handle, payload->draw.vertex_count, payload->draw.instance_count, 0, 0);
+            case COMMAND_DRAW:
+                vkCmdDraw(ctx.curr_submission->handle, 
+                        payload->draw.vertex_count, 
+                        payload->draw.instance_count, 
+                        0, 0);
                 break;
-            }
-            
-            case COMMAND_EMPTY_RESOURCE: {
+
+            case COMMAND_EMPTY_RESOURCE:
+                ;
+
                 managed_resource empty = {};
-                insert_resource(&ctx, &empty, payload->empty_resource, EMBER_ACCESS_NONE);
+                empty.type = MANAGED_RESOURCE;
+                insert_resource(&ctx, payload->empty_resource, EMBER_ACCESS_NONE, &empty);
                 break;
-            }
 
-            case COMMAND_IMPORT_TEXTURE: {
-                managed_resource framebuffer = {};
-                framebuffer.raw = (void*)payload->import_texture.texture;
-                insert_resource(&ctx, &framebuffer, payload->import_texture.dst_framebuffer, EMBER_ACCESS_NONE);
+            case COMMAND_IMPORT_TEXTURE:
+                ;
+
+                managed_resource texture = {};
+                texture.type = MANAGED_FRAMEBUFFER;
+                texture.framebuffer = payload->import_texture.texture;
+                insert_resource(&ctx, payload->import_texture.dst_framebuffer, EMBER_ACCESS_NONE, &texture);
                 break;
-            }
 
-            case COMMAND_ACQUIRE_SURFACE: {
-                const vulkan_surface* vk_surface = (const vulkan_surface*)payload->acquire_surface.surface;
+            case COMMAND_ACQUIRE_SURFACE:
+                ;
+
                 add_surface(payload->acquire_surface.surface);
 
-                declare_owner(&ctx, BINARY_SEMAPHORE, vk_surface->image_availables[vk_surface->image_index]);
+                vulkan_surface* vk_surface = (vulkan_surface*)payload->acquire_surface.surface;
 
-                managed_resource framebuffer = {};
-                framebuffer.raw = (void*) &vk_surface->frames_in_flight[vk_surface->image_index];
-                insert_resource(&ctx, &framebuffer, payload->acquire_surface.dst_framebuffer, EMBER_ACCESS_NONE);
+                owner_desc binary_owner = {};
+                binary_owner.type = COMMAND_OWNER_BINARY;
+                binary_owner.binary = vk_surface->image_availables[vk_surface->image_index];
+                declare_owner(&ctx, &binary_owner);
+
+                managed_resource frame_in_flight = {};
+                frame_in_flight.type = MANAGED_FRAMEBUFFER;
+                frame_in_flight.framebuffer = &vk_surface->frames_in_flight[vk_surface->image_index];
+                insert_resource(&ctx, payload->acquire_surface.dst_framebuffer, EMBER_ACCESS_NONE, &frame_in_flight);
 
                 release_resources(&ctx);
                 break;
-            }
         }
+
     }
+
+    return EMBER_RESULT_OK;
 }

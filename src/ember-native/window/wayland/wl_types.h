@@ -19,7 +19,7 @@ typedef struct wayland_desktop {
     struct xdg_toplevel_listener xdg_toplevel_listener;
 } wayland_desktop;
 
-em_result emwl_desktop_create(em_allocator* allocator, struct emwin_desktop** out_desktop);
+em_result emnat_wayland_desktop_create(em_allocator* allocator, struct emwin_desktop** out_desktop);
 
 typedef struct wayland_window { 
     struct wl_surface* surface;

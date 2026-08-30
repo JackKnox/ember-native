@@ -30,11 +30,19 @@ typedef enum cmd_payload_type {
     COMMAND_ACQUIRE_SURFACE,
 } cmd_payload_type;
 
+typedef struct pipeline_bind_info {
+    const emgpu_pipeline* pipeline;
+    const emgpu_resource_import* imports;
+    const emgpu_resource_export* exports;
+    u32 import_count;
+    u32 export_count;
+} pipeline_bind_info;
+
 typedef struct cmd_payload {
     cmd_payload_type type;
 
     union {
-        emgpu_computepass_config begin_computepass;
+        pipeline_bind_info begin_computepass;
 
         struct {
             uvec3 group_size;
@@ -51,7 +59,7 @@ typedef struct cmd_payload {
             uvec2 origin, size;
         } set_scissor;
 
-        emgpu_raster_bind_info bind_raster_pipeline;
+        pipeline_bind_info bind_raster_pipeline;
 
         struct {
             emgpu_buffer* buffers;
@@ -78,6 +86,6 @@ typedef struct cmd_payload {
     };
 } cmd_payload;
 
-em_result vulkan_poll_command_buffer(
-        const emgpu_command_buffer* command_buf, 
-        u8** out_cursor);
+b8 emnat_poll_command_buffer(
+    const emgpu_command_buffer* command_buf, 
+    void** out_cursor);

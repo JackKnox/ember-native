@@ -91,7 +91,7 @@ void registry_global_remove(
     uint32_t name) {
 }
 
-em_result emwl_desktop_create(em_allocator* allocator, struct emwin_desktop** out_desktop) {
+em_result emnat_wayland_desktop_create(em_allocator* allocator, struct emwin_desktop** out_desktop) {
     emwin_desktop* desktop = mem_allocate(allocator, sizeof(emwin_desktop));
 
 	desktop->internal_context = mem_allocate(allocator, sizeof(wayland_desktop));
