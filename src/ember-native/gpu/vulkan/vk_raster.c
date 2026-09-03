@@ -5,34 +5,6 @@
 
 #include <ember/gpu/raster.h>
 
-/*
-Each mode needs to describe:
-
-* Basic enabled / disabled value.
-* Device extensions.
-
-*/
-
-typedef struct vulkan_raster_sys {
-    VkQueue queue;
-} vulkan_raster_sys;
-
-b8 vulkan_raster_reqs() {
-    
-}
-
-em_result vulkan_raster_setup() {
-    
-}
-
-em_result vulkan_raster_init() {
-
-}
-
-void vulkan_raster_shutdown() {
-
-}
-
 em_result emgpu_raster_pipeline_create(
     emgpu_device* device, 
     em_allocator* allocator, 

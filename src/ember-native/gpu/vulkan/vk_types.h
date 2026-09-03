@@ -2,6 +2,9 @@
 
 #include "defines.h"
 
+#include "ember/gpu/command_buffer.h"
+#include "ember/gpu/surface.h"
+#include "ember/gpu/types.h"
 #include "gpu/command_decoder.h"
 
 #include <ember/gpu/device.h>
@@ -9,6 +12,7 @@
 #include <ember/gpu/raster.h>
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 // Checks a Vulkan call and logs an error on failure.
 // Intended for recoverable errors during initialization or runtime.
@@ -28,8 +32,12 @@ typedef enum vulkan_queue_family {
     VULKAN_QUEUE_FAMILY_RASTER,
     VULKAN_QUEUE_FAMILY_COMPUTE,
     VULKAN_QUEUE_FAMILY_TRANSFER,
-    __VULKAN_QUEUE_FAMILY_COUNT,
+    VULKAN_QUEUE_FAMILY_UNIVERSAL,
 } vulkan_queue_family;
+
+// Universal type doubles as the count so the universal
+// type is omitted when creating arrays.
+#define VULKAN_QUEUE_FAMILY_COUNT VULKAN_QUEUE_FAMILY_UNIVERSAL
 
 typedef struct vulkan_phys_queue {
     f64 score;
@@ -37,21 +45,29 @@ typedef struct vulkan_phys_queue {
     b8 enabled;
 } vulkan_phys_queue; 
 
+typedef struct vulkan_sys_info {
+    b8 enabled;
+    const char* extensions;
+    // u32 queue_count;
+} vulkan_sys_info;
+
+typedef struct vulkan_sys_state {
+    VkQueue queue;
+    u32 family_index;
+    VkTimelineSemaphore semaphore;
+    VkCommandPool pool;
+    VkCommandBuffer* commandbufs;
+} vulkan_sys_state;
+
 typedef struct vulkan_phys_device {
     VkPhysicalDevice handle;
     
     emgpu_device_capabilities capabilities;
-    vulkan_phys_queue queue_families[__VULKAN_QUEUE_FAMILY_COUNT];
+    vulkan_phys_queue queue_families[VULKAN_QUEUE_FAMILY_COUNT];
+    vulkan_sys_info modes[VULKAN_QUEUE_FAMILY_COUNT];
     
     i32 heuristic;
 } vulkan_phys_device;
-
-typedef struct vulkan_log_queue {
-    VkQueue handle;
-    u32 family_index;
-    b8 enabled;
-    VkTimelineSemaphore semaphore;
-} vulkan_log_queue;
 
 typedef struct vulkan_log_device {
     VkDevice handle;
@@ -62,6 +78,7 @@ typedef struct vulkan_context {
     VkInstance instance;
     VkAllocationCallbacks* allocator;
     vulkan_log_device device;
+    vulkan_sys_state modes[VULKAN_QUEUE_FAMILY_COUNT];
 } vulkan_context;
 
 typedef struct vulkan_pipeline {
@@ -108,16 +125,24 @@ typedef struct vulkan_surface {
  */
 
 typedef enum managed_resc_type {
-    MANAGED_RESOURCE,
-    MANAGED_FRAMEBUFFER,
+    MANAGED_RESOURCE_EMPTY,
+    MANAGED_RESOURCE_BUFFER,
+    MANAGED_RESOURCE_TEXTURE, // Same as a framebuffer in the system.
 } managed_resc_type;
 
 typedef struct managed_resource {
     managed_resc_type type;
 
+    emgpu_access_flags access;
+    vulkan_queue_family queue;
+
+    // Specific to a texture.
+    VkImageLayout texture_layout;
+
     union {
-        emgpu_texture* framebuffer;
-    };
+        emgpu_buffer* buffer;
+        emgpu_texture* texture;
+    } data;
 } managed_resource;
 
 typedef enum command_owner_type {
@@ -135,19 +160,52 @@ typedef struct owner_desc {
     };
 } owner_desc;
 
+typedef struct resource_use {
+    emgpu_local_resource resource;
+    emgpu_access_flags access;
+    vulkan_queue_family queue;
+
+    //specific to a texture.
+    VkImageLayout texture_layout;
+} resource_use;
+
+typedef struct owner_frame {
+    owner_desc desc;
+    resource_use* uses;
+} owner_frame;
+
 typedef struct vulkan_command_submission {
-    emgpu_ops_type ops_type;
+    vulkan_queue_family queue;
     VkCommandBuffer handle;
 } vulkan_command_submission;
 
 typedef struct vulkan_command_context {
     em_allocator* allocator;
 
+    owner_frame* stack;
+
+    managed_resource* resource_table;
+
+    emgpu_surface** surfaces;
+
     vulkan_command_submission* curr_submission;
     vulkan_command_submission* submissions;
 
     b8 bound_pipeline;
 } vulkan_command_context;
+
+// Main entry points for device modes.
+// ---------------------------------------
+
+vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device);
+
+vulkan_sys_info vulkan_compute_setup(vulkan_phys_device* device);
+
+vulkan_sys_info vulkan_transfer_setup(vulkan_phys_device* device);
+
+// ---------------------------------------
+
+em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_context* ctx, const emgpu_command_buffer* command_buffer);
 
 // Converts Vulkan error code to engine result code.
 em_result em_result_from_vulkan_result(VkResult result);
@@ -180,8 +238,8 @@ u32 score_phys_device(vulkan_phys_device* device);
 // Scores a Vulkan queue family for a specific Ember queue purpose.
 f64 score_queue_type(VkQueueFamilyProperties* queue_family, vulkan_queue_family queue_type);
 
-// Finds the needed ops type for a command in a emgpu_commandbuf.
-emgpu_ops_type command_ops_type(cmd_payload_type type);
+// Finds the needed Vulkan queue family for a commmand.
+vulkan_queue_family command_queue_family(cmd_payload_type type); 
 
 // Converts the ops type assaigned to a pipeline into a needed bind point.
 VkPipelineBindPoint vulkan_bind_point(emgpu_ops_type type);

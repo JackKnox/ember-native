@@ -1,9 +1,11 @@
 #include "defines.h"
+#include "ember/core.h"
 #include "vk_types.h"
 
 #include "utils/darray.h"
 
 #include <ember/gpu/device.h>
+#include <vulkan/vulkan_core.h>
 
 em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* config, emgpu_device* out_device) {
     // Allocate massive internal context.
@@ -145,10 +147,16 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         VkQueueFamilyProperties* queue_families = darray_from_data(VkQueueFamilyProperties, queue_family_count, NULL, allocator);
         vkGetPhysicalDeviceQueueFamilyProperties(curr_device.handle, &queue_family_count, queue_families);
 
+        // We rate the queue families to find which one is best to use
+        // queues on. We rate each queue family for each type it supports/
         for (u32 i = 0; i < queue_family_count; ++i) {
             VkQueueFamilyProperties* queue_family = &queue_families[i];
 
-            for (u32 j = 0; j < __VULKAN_QUEUE_FAMILY_COUNT; ++j) {
+            for (u32 j = 0; j < VULKAN_QUEUE_FAMILY_COUNT; ++j) {
+                // The algorithim discourages queue types with more supported types
+                // plus a priority for each type, this means the queues will be more likely
+                // be to seperated across the supported families and on less-expensive GPUs
+                // it will just use less queue families.
                 f64 score = score_queue_type(queue_family, (vulkan_queue_family)j);
 
                 if (score > curr_device.queue_families[j].score) {
@@ -173,22 +181,22 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         // to 'light up' that collide with that shape, therefore rendering it. It also
         // includes running fragments shaders on those pixels to make it look pretty.
         if (combined_modes & EMBER_DEVICE_MODE_RASTER) {
-            b8 raster_supported =
-                curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].enabled;
+            vulkan_sys_info raster = vulkan_raster_setup(&curr_device);
             
             // Do some tomfool-ly because Ember requires optional modes.
-            if (!raster_supported) {
+            if (!raster.enabled) {
                 if (config->required_modes & EMBER_DEVICE_MODE_RASTER) {
                     EM_ERROR("Vulkan", "Skipping device: required raster mode is unavailable.");
                     continue;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_RASTER) {
-                    EM_WARN("Vulkan", "Raster mode requested but unavailable; continuing without raster support.");
+                    EM_WARN("Vulkan", "Checking device: optional raster mode is unavailable.");
                 }
             } else {
-                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_RASTER;
                 EM_INFO("Vulkan", "Found raster queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].family_index);
+                curr_device.modes[VULKAN_QUEUE_FAMILY_RASTER] = raster;
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_RASTER;
             }
         }
 
@@ -197,22 +205,22 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         // e.g. raytracing or physics calcualtions in a game or simulation. Doing many little small
         // tasks on the GPU is sometimes better than one big one on the CPU.
         if (combined_modes & EMBER_DEVICE_MODE_COMPUTE) {
-            b8 compute_supported =
-                curr_device.queue_families[VULKAN_QUEUE_FAMILY_COMPUTE].enabled;
+            vulkan_sys_info compute = vulkan_compute_setup(&curr_device);
 
             // Do some tomfool-ly because Ember requires optional modes.
-            if (!compute_supported) {
+            if (!compute.enabled) {
                 if (config->required_modes & EMBER_DEVICE_MODE_COMPUTE) {
                     EM_ERROR("Vulkan", "Skipping device: required compute mode is unavailable.");
                     continue;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_COMPUTE) {
-                    EM_WARN("Vulkan", "Checking device: required compute mode is unavailable (optional).");
+                    EM_WARN("Vulkan", "Checking device: optional compute mode is unavailable.");
                 }
             } else {
-                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_COMPUTE;
                 EM_INFO("Vulkan", "Found compute queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_COMPUTE].family_index);
+                curr_device.modes[VULKAN_QUEUE_FAMILY_COMPUTE] = compute;
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_COMPUTE;
             }
         }
 
@@ -221,22 +229,22 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         // huge cables coming out your GPU called PCIe cables, transferring does take time
         // and must be managed asynchronously.
         if (combined_modes & EMBER_DEVICE_MODE_TRANSFER) {
-            b8 transfer_supported =
-                curr_device.queue_families[VULKAN_QUEUE_FAMILY_TRANSFER].enabled;
+            vulkan_sys_info transfer = vulkan_transfer_setup(&curr_device);
 
             // Do some tomfool-ly because Ember requires optional modes.
-            if (!transfer_supported) {
+            if (!transfer.enabled) {
                 if (config->required_modes & EMBER_DEVICE_MODE_TRANSFER) {
                     EM_ERROR("Vulkan", "Skipping device: required transfer mode is unavailable.");
                     continue;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_TRANSFER) {
-                    EM_WARN("Vulkan", "Checking device: required transfer mode is unavailable (optional).");
+                    EM_WARN("Vulkan", "Checking device: required transfer mode is unavailable.");
                 }
             } else {
-                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_TRANSFER; 
                 EM_INFO("Vulkan", "Found transfer queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_TRANSFER].family_index);
+                curr_device.modes[VULKAN_QUEUE_FAMILY_TRANSFER] = transfer;
+                curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_TRANSFER; 
             }
         }
         
@@ -259,7 +267,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY) {
-                    EM_WARN("Vulkan", "Checking device: required sampler anisotropy mode is unavailable (optional).");
+                    EM_WARN("Vulkan", "Checking device: required sampler anisotropy mode is unavailable.");
                 }
             } else {
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY; 
@@ -286,7 +294,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     // We could of picked the same family index for R/C/T and we can't send duplicates
     // into logical device creation so we need to this complicated double for loop.
     f32 queue_priority = 1.0f;
-    VkDeviceQueueCreateInfo* queue_create_infos = darray_reserve(VkDeviceQueueCreateInfo, __VULKAN_QUEUE_FAMILY_COUNT, allocator);
+    VkDeviceQueueCreateInfo* queue_create_infos = darray_reserve(VkDeviceQueueCreateInfo, VULKAN_QUEUE_FAMILY_COUNT, allocator);
 
     for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.queue_families); ++i) {
         vulkan_phys_queue* queue = &chosen_device.queue_families[i];
@@ -328,7 +336,80 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     // Destroy temp data.
     darray_destroy(queue_create_infos);
 
+    for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.modes); ++i) {
+        vulkan_sys_info* mode_info = &chosen_device.modes[i];
+
+        vulkan_sys_state* new_state = &context->modes[i];
+        new_state->family_index = chosen_device.queue_families[i].family_index;
+        new_state->commandbufs = darray_from_data(VkCommandBuffer, config->frames_in_flight, NULL, allocator);
+        vkGetDeviceQueue(context->device.handle, new_state->family_index, 0, &new_state->queue);
+
+        VkCommandPoolCreateInfo pool_create_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+        pool_create_info.queueFamilyIndex = new_state->family_index;
+
+        CHECK_VKRESULT(
+            vkCreateCommandPool(context->device.handle, &pool_create_info, context->allocator, &new_state->pool), 
+            "Failed to create mode command pool");
+
+        VkCommandBufferAllocateInfo allocate_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+        allocate_info.commandPool = new_state->pool;
+        allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocate_info.commandBufferCount = config->frames_in_flight;
+
+        CHECK_VKRESULT(
+            vkAllocateCommandBuffers(context->device.handle, &allocate_info, new_state->commandbufs),
+            "Failed to allocate mode command buffers");
+
+        VkSemaphoreTypeCreateInfo timeline_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+        timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+
+        VkSemaphoreCreateInfo semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        semaphore_info.pNext = &timeline_info;
+
+        CHECK_VKRESULT(
+            vkCreateSemaphore(context->device.handle, &semaphore_info, context->allocator, &new_state->semaphore), 
+            "Failed to create mode timeline semaphore");
+    }
+
     EM_INFO("Vulkan", "GPU device successfuly initialized.");
+    return EMBER_RESULT_OK;
+}
+
+em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emgpu_command_buffer* command_buf) {
+    vulkan_context* context = (vulkan_context*)device->internal_context;
+
+    vulkan_command_context ctx = {};
+    ctx.allocator = &device->frame_allocator;
+    ctx.submissions = darray_create(vulkan_command_context, ctx.allocator);
+
+    // This is the big boy function; it decodes the entire command buffer and fills
+    // the command context with submissions and surface calls to hand directly to the queue.
+    // It also manages all the resource depenedecies and inserts dependency break all for
+    // use, see vk_decoder.c.
+    em_result result = vulkan_decode_command_buffer(device, &ctx, command_buf);
+    if (result != EMBER_RESULT_OK) return result;
+
+    VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+    wait_info.pSemaphores = context->modes.semaphores;
+    wait_info.semaphoreCount = darray_length(context->modes.semaphores);
+    wait_info.pValues = context->modes.wait_values[device->current_frame];
+    vkWaitSemaphores(context->device.handle, &wait_info, UINT64_MAX);
+
+    for (u32 i = 0; i < darray_length(ctx.submissions); ++i) {
+        const vulkan_command_submission* submission = &ctx.submissions[i];
+
+        VkCommandBufferSubmitInfo command_buf_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+        command_buf_info.commandBuffer = submission->handle;
+
+        VkSubmitInfo2 submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+        submit_info.commandBufferInfoCount = 1;
+        submit_info.pCommandBufferInfos    = &command_buf_info;
+
+        vkQueueSubmit2(context->modes[submission->queue].queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+
+    for (u32 i = 0; EM_ARRAYSIZE(context->modes); ++i)
+        context->modes.wait_values[device->current_frame][i] = context->modes.values[i];
     return EMBER_RESULT_OK;
 }
 
@@ -338,4 +419,16 @@ void emgpu_device_shutdown(em_allocator* allocator, emgpu_device* device) {
 
 em_result emgpu_device_get_capabilities(emgpu_device* device, emgpu_device_capabilities* out_capabilities) {
     
+}
+
+// ----- Raster mode entry point --------------------------
+vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device) {
+    vulkan_sys_info info = {};
+    info.enabled    = device->queue_families[VULKAN_QUEUE_FAMILY_RASTER].enabled;
+    info.extensions = VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME;
+    return info;
+}
+
+em_result vulkan_raster_init() {
+
 }
