@@ -240,18 +240,6 @@ em_result vulkan_extensions_setup(emgpu_device* device, em_allocator* allocator,
 
 em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_context* ctx, const emgpu_command_buffer* command_buffer);
 
-// Converts Vulkan error code to engine result code.
-em_result em_result_from_vulkan_result(VkResult result);
-
-// Returns a human-readable string for a Vulkan result code.
-const char* vulkan_result_string(VkResult result, b8 get_extended);
-
-// Determines whether a Vulkan result represents a success code.
-b8 vulkan_result_is_success(VkResult result);
-
-// Converts format type to a Vulkan format.
-VkFormat vulkan_format_type(emgpu_format format);
-
 // Finds a suitable memory index based on memory requirements, -1 means one could not be found.
 i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags);
 
@@ -265,20 +253,20 @@ em_result vulkan_create_shader_stage(emgpu_device* device, em_allocator* allocat
 // TODO: Maybe get rid of this?
 void vulkan_device_from_capabilities(vulkan_phys_device* curr_device, emgpu_device_capabilities* out_capabilities);
 
-// TODO: THIS FUNCTION ANNOYES ME SO MUCH.
-VkFormat ember_vk_format_type(emgpu_format format);
-
 // Scores a physical GPU based on its overall usefulness.
 u32 score_phys_device(vulkan_phys_device* device);
 
 // Scores a Vulkan queue family for a specific Ember queue purpose.
 f64 score_queue_type(VkQueueFamilyProperties* queue_family, vulkan_queue_family queue_type);
 
+// Converts Ember descriptor type to Vulkan type.
+VkDescriptorType vulkan_descriptor_type(emgpu_descriptor_type type);
+
+// Converts Ember shader stage type to Vulkan type.
+VkShaderStageFlags vulkan_shader_stage_type(emgpu_shader_stage_type stage_type);
+
 // Finds the needed Vulkan queue family for a commmand.
 vulkan_queue_family command_queue_family(cmd_payload_type type); 
-
-// Converts the ops type assaigned to a pipeline into a needed bind point.
-VkPipelineBindPoint vulkan_bind_point(emgpu_ops_type type);
 
 // Converts load op format to a Vulkan format.
 VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op);
@@ -286,9 +274,16 @@ VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op);
 // Converts store op format to a Vulkan format.
 VkAttachmentStoreOp vulkan_store_op_type(emgpu_store_op store_op);
 
-// Finds the nessacery image layout for a access flag, mearly a suggestion
-// if the texture already has a supported image layout it will fall through.
-VkImageLayout vulkan_image_layout(emgpu_access_flags access);
+// Converts the ops type assaigned to a pipeline into a needed bind point.
+VkPipelineBindPoint vulkan_bind_point(emgpu_ops_type type);
+
+// Converts blend factor to a Vulkan format.
+VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor);
+
+// Converts blend op to a Vulkan format.
+VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op);
+
+VkBufferUsageFlags vulkan_buffer_usage(emgpu_buffer_usage usage);
 
 // Converts Ember texture usage to Vulkan texture usage.
 VkImageUsageFlags vulkan_texture_usage(emgpu_texture_usage usage);
@@ -296,8 +291,24 @@ VkImageUsageFlags vulkan_texture_usage(emgpu_texture_usage usage);
 // Gives surface colour space for a given Ember format.
 VkColorSpaceKHR vulkan_format_colour_space(emgpu_format format);
 
-// Converts blend factor to a Vulkan format.
-VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor);
+// Finds ths stage wait flags for the needed access to resource.
+VkPipelineStageFlags2 vulkan_wait_stage(emgpu_access_flags access);
 
-// Converts blend op to a Vulkan format.
-VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op);
+// Finds the nessacery image layout for a access flag, mearly a suggestion
+// if the texture already has a supported image layout it will fall through.
+VkImageLayout vulkan_image_layout(emgpu_access_flags access);
+
+// Converts format type to a Vulkan format.
+VkFormat vulkan_format_type(emgpu_format format);
+
+// TODO: THIS FUNCTION ANNOYES ME SO MUCH.
+VkFormat ember_vk_format_type(emgpu_format format);
+
+// Converts Vulkan error code to engine result code.
+em_result em_result_from_vulkan_result(VkResult result);
+
+// Returns a human-readable string for a Vulkan result code.
+const char* vulkan_result_string(VkResult result, b8 get_extended);
+
+// Determines whether a Vulkan result represents a success code.
+b8 vulkan_result_is_success(VkResult result);

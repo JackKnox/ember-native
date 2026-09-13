@@ -3,6 +3,7 @@
 #include "vk_types.h"
 
 #include "utils/darray.h"
+#include <vulkan/vulkan_core.h>
 
 i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags) {
     VkPhysicalDeviceMemoryProperties device_memories = {};
@@ -15,33 +16,6 @@ i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirem
 
     EM_ERROR("Vulkan", "Cannot find suitable memory type for GPU domain memory");
     return -1;
-}
-
-VkDescriptorType vulkan_descriptor_type(emgpu_descriptor_type type) {
-    switch (type) {
-        case EMBER_DESCRIPTOR_TYPE_STORAGE_BUFFER: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        case EMBER_DESCRIPTOR_TYPE_STORAGE_IMAGE:  return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        case EMBER_DESCRIPTOR_TYPE_UNIFORM_BUFFER: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        case EMBER_DESCRIPTOR_TYPE_SAMPLED_IMAGE:  return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        default:
-            EM_ASSERT(EMFALSE);
-            break;
-    }
-
-    return 0;
-}
-
-VkShaderStageFlags vulkan_shader_stage_type(emgpu_shader_stage_type stage_type) {
-    switch (stage_type) {
-        case EMBER_SHADER_STAGE_TYPE_VERTEX:   return VK_SHADER_STAGE_VERTEX_BIT;
-        case EMBER_SHADER_STAGE_TYPE_FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
-        case EMBER_SHADER_STAGE_TYPE_COMPUTE:  return VK_SHADER_STAGE_COMPUTE_BIT;
-        default:
-            EM_ASSERT(EMFALSE);
-            break;
-    }
-
-    return 0;
 }
 
 em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allocator, const emgpu_descriptor_desc* descriptors, u32 descriptor_count, emgpu_pipeline* out_pipeline) {
@@ -179,32 +153,62 @@ f64 score_queue_type(VkQueueFamilyProperties* queue_family, vulkan_queue_family 
     return queue_priority / queue_types; //+ log2(queue_family->queueCount);
 }
 
+VkDescriptorType vulkan_descriptor_type(emgpu_descriptor_type type) {
+    switch (type) {
+    case EMBER_DESCRIPTOR_TYPE_STORAGE_BUFFER: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    case EMBER_DESCRIPTOR_TYPE_STORAGE_IMAGE:  return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    case EMBER_DESCRIPTOR_TYPE_UNIFORM_BUFFER: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    case EMBER_DESCRIPTOR_TYPE_SAMPLED_IMAGE:  return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported descriptor type!");
+        break;
+    }
+
+    return 0;
+}
+
+VkShaderStageFlags vulkan_shader_stage_type(emgpu_shader_stage_type stage_type) {
+    switch (stage_type) {
+    case EMBER_SHADER_STAGE_TYPE_VERTEX:   return VK_SHADER_STAGE_VERTEX_BIT;
+    case EMBER_SHADER_STAGE_TYPE_FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
+    case EMBER_SHADER_STAGE_TYPE_COMPUTE:  return VK_SHADER_STAGE_COMPUTE_BIT;
+
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported shader stage type!");
+        break;
+    }
+
+    return 0;
+}
+
 vulkan_queue_family command_queue_family(cmd_payload_type type) {
     switch (type) {
-    case COMMAND_BEGIN_COMPUTEPASS: return VULKAN_QUEUE_FAMILY_COMPUTE;
-    case COMMAND_DISPATCH:          return VULKAN_QUEUE_FAMILY_COMPUTE;
-    case COMMAND_END_COMPUTEPASS:   return VULKAN_QUEUE_FAMILY_COMPUTE;
-
-    case COMMAND_BEGIN_RENDERPASS: return VULKAN_QUEUE_FAMILY_RASTER;
-    case COMMAND_END_RENDERPASS:   return VULKAN_QUEUE_FAMILY_RASTER;
-    case COMMAND_SET_VIEWPORT:     return VULKAN_QUEUE_FAMILY_RASTER;
-    case COMMAND_SET_SCISSOR:      return VULKAN_QUEUE_FAMILY_RASTER;
-
+    case COMMAND_BEGIN_COMPUTEPASS:    return VULKAN_QUEUE_FAMILY_COMPUTE;
+    case COMMAND_DISPATCH:             return VULKAN_QUEUE_FAMILY_COMPUTE;
+    case COMMAND_END_COMPUTEPASS:      return VULKAN_QUEUE_FAMILY_COMPUTE;
+    case COMMAND_BEGIN_RENDERPASS:     return VULKAN_QUEUE_FAMILY_RASTER;
+    case COMMAND_END_RENDERPASS:       return VULKAN_QUEUE_FAMILY_RASTER;
+    case COMMAND_SET_VIEWPORT:         return VULKAN_QUEUE_FAMILY_RASTER;
+    case COMMAND_SET_SCISSOR:          return VULKAN_QUEUE_FAMILY_RASTER;
     case COMMAND_BIND_RASTER_PIPELINE: return VULKAN_QUEUE_FAMILY_RASTER;
     case COMMAND_BIND_VERTEX_BUFFERS:  return VULKAN_QUEUE_FAMILY_RASTER;
     case COMMAND_BIND_INDEX_BUFFER:    return VULKAN_QUEUE_FAMILY_RASTER;
     case COMMAND_DRAW:                 return VULKAN_QUEUE_FAMILY_RASTER;
+    case COMMAND_EMPTY_RESOURCE:       return VULKAN_QUEUE_FAMILY_UNIVERSAL;
+    case COMMAND_IMPORT_TEXTURE:       return VULKAN_QUEUE_FAMILY_UNIVERSAL;
+    case COMMAND_ACQUIRE_SURFACE:      return VULKAN_QUEUE_FAMILY_UNIVERSAL;
 
-    case COMMAND_EMPTY_RESOURCE:  return VULKAN_QUEUE_FAMILY_UNIVERSAL;
-    case COMMAND_IMPORT_TEXTURE:  return VULKAN_QUEUE_FAMILY_UNIVERSAL;
-    case COMMAND_ACQUIRE_SURFACE: return VULKAN_QUEUE_FAMILY_UNIVERSAL;
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported command type!");
+        break;
     }
 }
 
 VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op) {
     switch (load_op) {
-    case EMBER_LOAD_OP_LOAD: return VK_ATTACHMENT_LOAD_OP_LOAD;
-    case EMBER_LOAD_OP_CLEAR: return VK_ATTACHMENT_LOAD_OP_CLEAR;
+    case EMBER_LOAD_OP_LOAD:      return VK_ATTACHMENT_LOAD_OP_LOAD;
+    case EMBER_LOAD_OP_CLEAR:     return VK_ATTACHMENT_LOAD_OP_CLEAR;
     case EMBER_LOAD_OP_DONT_CARE: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
     default:
@@ -217,7 +221,7 @@ VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op) {
 
 VkAttachmentStoreOp vulkan_store_op_type(emgpu_store_op store_op) {
     switch (store_op) {
-    case EMBER_STORE_OP_STORE: return VK_ATTACHMENT_STORE_OP_STORE;
+    case EMBER_STORE_OP_STORE:     return VK_ATTACHMENT_STORE_OP_STORE;
     case EMBER_STORE_OP_DONT_CARE: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
     
     default:
@@ -228,29 +232,100 @@ VkAttachmentStoreOp vulkan_store_op_type(emgpu_store_op store_op) {
     return 0;
 }
 
+VkPipelineBindPoint vulkan_bind_point(emgpu_ops_type type) {
+    switch (type) {
+    case EMBER_OPER_TYPE_RASTER:   return VK_PIPELINE_BIND_POINT_GRAPHICS;
+    case EMBER_OPER_TYPE_COMPUTE:  return VK_PIPELINE_BIND_POINT_COMPUTE;
+    case EMBER_OPER_TYPE_RAYTRACE: return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
+    
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported bind point!");
+        break;
+    }
+}
+
 VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor) {
     switch (blend_factor) {
-        case EMBER_BLEND_FACTOR_ZERO:                         return VK_BLEND_FACTOR_ZERO;
-        case EMBER_BLEND_FACTOR_ONE:                          return VK_BLEND_FACTOR_ONE;
-        case EMBER_BLEND_FACTOR_SRC_COLOUR:                   return VK_BLEND_FACTOR_SRC_COLOR;
-        case EMBER_BLEND_FACTOR_ONE_MINUS_SRC_COLOUR:         return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
-        case EMBER_BLEND_FACTOR_DST_COLOUR:                   return VK_BLEND_FACTOR_DST_COLOR;
-        case EMBER_BLEND_FACTOR_ONE_MINUS_DST_COLOUR:         return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
-        case EMBER_BLEND_FACTOR_SRC_ALPHA:                    return VK_BLEND_FACTOR_SRC_ALPHA;
-        case EMBER_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:          return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        case EMBER_BLEND_FACTOR_DST_ALPHA:                    return VK_BLEND_FACTOR_DST_ALPHA;
-        case EMBER_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:          return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
-        case EMBER_BLEND_FACTOR_CONSTANT_COLOUR:              return VK_BLEND_FACTOR_CONSTANT_COLOR;
-        case EMBER_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOUR:    return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
-        case EMBER_BLEND_FACTOR_CONSTANT_ALPHA:               return VK_BLEND_FACTOR_CONSTANT_ALPHA;
-        case EMBER_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:     return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
-        
-        default:
-            EM_ASSERT(EMFALSE && "Unsupported blend factor!");
-            break;
+    case EMBER_BLEND_FACTOR_ZERO:                      return VK_BLEND_FACTOR_ZERO;
+    case EMBER_BLEND_FACTOR_ONE:                       return VK_BLEND_FACTOR_ONE;
+    case EMBER_BLEND_FACTOR_SRC_COLOUR:                return VK_BLEND_FACTOR_SRC_COLOR;
+    case EMBER_BLEND_FACTOR_ONE_MINUS_SRC_COLOUR:      return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+    case EMBER_BLEND_FACTOR_DST_COLOUR:                return VK_BLEND_FACTOR_DST_COLOR;
+    case EMBER_BLEND_FACTOR_ONE_MINUS_DST_COLOUR:      return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+    case EMBER_BLEND_FACTOR_SRC_ALPHA:                 return VK_BLEND_FACTOR_SRC_ALPHA;
+    case EMBER_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:       return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    case EMBER_BLEND_FACTOR_DST_ALPHA:                 return VK_BLEND_FACTOR_DST_ALPHA;
+    case EMBER_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:       return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+    case EMBER_BLEND_FACTOR_CONSTANT_COLOUR:           return VK_BLEND_FACTOR_CONSTANT_COLOR;
+    case EMBER_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOUR: return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+    case EMBER_BLEND_FACTOR_CONSTANT_ALPHA:            return VK_BLEND_FACTOR_CONSTANT_ALPHA;
+    case EMBER_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:  return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+    
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported blend factor!");
+        break;
     }
 
     return 0;
+}
+
+VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op) {
+    switch (blend_op) {
+    case EMBER_BLEND_OP_ADD:              return VK_BLEND_OP_ADD;
+    case EMBER_BLEND_OP_SUBTRACT:         return VK_BLEND_OP_SUBTRACT;
+    case EMBER_BLEND_OP_REVERSE_SUBTRACT: return VK_BLEND_OP_REVERSE_SUBTRACT;
+    case EMBER_BLEND_OP_MIN:              return VK_BLEND_OP_MIN;
+    case EMBER_BLEND_OP_MAX:              return VK_BLEND_OP_MAX;
+
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported blend op!");
+        break;
+    }
+
+    return 0;
+}
+
+VkBufferUsageFlags vulkan_buffer_usage(emgpu_buffer_usage usage) {
+    VkBufferUsageFlags vk_usage = 0;
+    if (usage & EMBER_BUFFER_USAGE_VERTEX)  vk_usage |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (usage & EMBER_BUFFER_USAGE_INDEX)   vk_usage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    if (usage & EMBER_BUFFER_USAGE_UNIFORM) vk_usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    if (usage & EMBER_BUFFER_USAGE_STORAGE) vk_usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    if (usage & EMBER_BUFFER_USAGE_TRANSFER_SRC) vk_usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    if (usage & EMBER_BUFFER_USAGE_TRANSFER_DST) vk_usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    return vk_usage;
+}
+
+VkImageUsageFlags vulkan_texture_usage(emgpu_texture_usage usage) {
+    VkImageUsageFlags vk_usage = 0;
+    if (usage & EMBER_TEXTURE_USAGE_STORAGE) vk_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+    if (usage & EMBER_TEXTURE_USAGE_SAMPLED) vk_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    if (usage & EMBER_TEXTURE_USAGE_TRANSFER_SRC) vk_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if (usage & EMBER_TEXTURE_USAGE_TRANSFER_DST) vk_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (usage & EMBER_TEXTURE_USAGE_ATTACHMENT_DST) vk_usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    return vk_usage;
+}
+
+VkColorSpaceKHR vulkan_format_colour_space(emgpu_format format) {
+    return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+}
+
+VkPipelineStageFlags2 vulkan_wait_stage(emgpu_access_flags access) {
+     return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+}
+
+VkImageLayout vulkan_image_layout(emgpu_access_flags access) {
+    switch (access) {
+    case EMBER_ACCESS_SHADER_WRITE:            return VK_IMAGE_LAYOUT_GENERAL;
+    case EMBER_ACCESS_SHADER_READ:             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    case EMBER_ACCESS_COLOUR_ATTACHMENT_WRITE: return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    default:
+        return VK_IMAGE_LAYOUT_GENERAL;
+        break;
+    }
 }
 
 VkFormat vulkan_format_type(emgpu_format format) {
@@ -346,20 +421,8 @@ VkFormat vulkan_format_type(emgpu_format format) {
     }
 }
 
-VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op) {
-    switch (blend_op) {
-        case EMBER_BLEND_OP_ADD:                return VK_BLEND_OP_ADD;
-        case EMBER_BLEND_OP_SUBTRACT:           return VK_BLEND_OP_SUBTRACT;
-        case EMBER_BLEND_OP_REVERSE_SUBTRACT:   return VK_BLEND_OP_REVERSE_SUBTRACT;
-        case EMBER_BLEND_OP_MIN:                return VK_BLEND_OP_MIN;
-        case EMBER_BLEND_OP_MAX:                return VK_BLEND_OP_MAX;
+VkFormat ember_vk_format_type(emgpu_format format) {
 
-        default:
-            EM_ASSERT(EMFALSE && "Unsupported blend op!");
-            break;
-    }
-
-    return 0;
 }
 
 em_result em_result_from_vulkan_result(VkResult result) {

@@ -374,9 +374,9 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     return EMBER_RESULT_OK;
 }
 
-/*
- * Each draw calls wait on the prev draw calls and signals the next, on host if the wheels looped back around before submit finshed then you need to when on the CPU.
- */
+em_result emgpu_device_open_queue(emgpu_device* device, emgpu_queue* out_queue) {
+    return EMBER_RESULT_OK;
+}
 
 em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emgpu_command_buffer* command_buf) {
     vulkan_device* vk_device = (vulkan_device*)device->internal_context;
@@ -424,5 +424,19 @@ vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device) {
     vulkan_sys_info info = {};
     info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_RASTER].enabled;
     info.extensions = VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME;
+    return info;
+}
+
+// ----- Compute mode entry point --------------------------
+vulkan_sys_info vulkan_compute_setup(vulkan_phys_device* device) {
+    vulkan_sys_info info = {};
+    info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_COMPUTE].enabled;
+    return info;
+}
+
+// ----- Transfer mode entry point --------------------------
+vulkan_sys_info vulkan_transfer_setup(vulkan_phys_device* device) {
+    vulkan_sys_info info = {};
+    info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_TRANSFER].enabled;
     return info;
 }

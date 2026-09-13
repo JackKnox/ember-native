@@ -14,18 +14,12 @@ em_result emgpu_buffer_create(
     vulkan_buffer* vk_buffer = (vulkan_buffer*)out_buffer->internal_data;
 
     VkBufferCreateInfo buffer_create_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    buffer_create_info.size = config->buffer_size;
+    buffer_create_info.size  = config->buffer_size;
+    buffer_create_info.usage = vulkan_buffer_usage(config->usage);
     
     // TODO: Not so sure about setting this, could simply expose it Ember.
     buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
-    if (config->usage & EMBER_BUFFER_USAGE_VERTEX)  buffer_create_info.usage |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    if (config->usage & EMBER_BUFFER_USAGE_INDEX)   buffer_create_info.usage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    if (config->usage & EMBER_BUFFER_USAGE_UNIFORM) buffer_create_info.usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    if (config->usage & EMBER_BUFFER_USAGE_STORAGE) buffer_create_info.usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    if (config->usage & EMBER_BUFFER_USAGE_TRANSFER_SRC) buffer_create_info.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if (config->usage & EMBER_BUFFER_USAGE_TRANSFER_DST) buffer_create_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
     // A buffer is just 'some data', a completely raw, linear array of bytes used for any kind of data.
     // Unlike a image, buffers hold unstructured arrays of bytes, making them ideal for geometric data or arbitrary numbers.
     CHECK_VKRESULT(

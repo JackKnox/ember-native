@@ -105,8 +105,7 @@ void release_resources(vulkan_command_context* ctx) {
                 // Semaphores.
                 VkSemaphoreSubmitInfo* semaphore_info = darray_push_empty(ctx->curr_submission->waits);
                 semaphore_info->semaphore = prev.binary_owner;
-                semaphore_info->stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                //semaphore_info->stageMask = vulkan_wait_stage(next.access);
+                semaphore_info->stageMask = vulkan_wait_stage(next.access);
             }
             else {
                 // Timeline break
