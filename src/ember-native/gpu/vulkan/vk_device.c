@@ -1,16 +1,12 @@
 #include "defines.h"
-#include "ember/core.h"
 #include "vk_types.h"
 
 #include "utils/darray.h"
 
-#include <ember/gpu/device.h>
-#include <vulkan/vulkan_core.h>
-
 em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* config, emgpu_device* out_device) {
     // Allocate massive internal context.
-    out_device->internal_context  = mem_allocate(allocator, sizeof(vulkan_context));
-    vulkan_context* context = (vulkan_context*)out_device->internal_context;
+    out_device->internal_context  = mem_allocate(allocator, sizeof(vulkan_device));
+    vulkan_device* vk_device = (vulkan_device*)out_device->internal_context;
 
     EM_INFO("GPU", "Initialising GPU device with name: %s", config->debug_name);
 
@@ -19,7 +15,10 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
 	const char** required_validation_layers = darray_create(const char*, allocator);
 
     // TODO: Gather emgpu_device extension data.
-
+    //
+    em_result result = vulkan_extensions_setup(out_device, allocator, config);
+    if (result != EMBER_RESULT_OK) return result;
+    
     // ----- Vulkan instance ---------------------------------
     // Verify exsistence of extensions
     u32 supported_extension_count = 0;
@@ -92,7 +91,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
             VK_VERSION_PATCH(VK_HEADER_VERSION_COMPLETE));
 
 	CHECK_VKRESULT(
-		vkCreateInstance(&create_info, context->allocator, &context->instance),
+		vkCreateInstance(&create_info, vk_device->allocator, &vk_device->instance),
 		"Failed to create Vulkan instance");
     
     EM_TRACE("Vulkan", "Created Vulkan instance with %i extension(s)", darray_length(required_extensions));
@@ -111,7 +110,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     u32 physical_device_count = 0;
 
     CHECK_VKRESULT(
-        vkEnumeratePhysicalDevices(context->instance, &physical_device_count, NULL),    
+        vkEnumeratePhysicalDevices(vk_device->instance, &physical_device_count, NULL),    
         "Failed to enumerate physical devices");
 
     if (!physical_device_count) {
@@ -122,7 +121,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     EM_TRACE("Vulkan", "Enumerated %i physical device(s)", physical_device_count);
     
     VkPhysicalDevice* physical_devices = darray_from_data(VkPhysicalDevice, physical_device_count, NULL, allocator);
-    vkEnumeratePhysicalDevices(context->instance, &physical_device_count, physical_devices);
+    vkEnumeratePhysicalDevices(vk_device->instance, &physical_device_count, physical_devices);
     
     // We will populate this below, submit to change as we iterate all the devices.
     vulkan_phys_device chosen_device = {};
@@ -159,10 +158,10 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 // it will just use less queue families.
                 f64 score = score_queue_type(queue_family, (vulkan_queue_family)j);
 
-                if (score > curr_device.queue_families[j].score) {
-                    curr_device.queue_families[j].family_index = i;
-                    curr_device.queue_families[j].score = score;
-                    curr_device.queue_families[j].enabled = EMTRUE;
+                if (score > curr_device.phys_modes[j].score) {
+                    curr_device.phys_modes[j].family_index = i;
+                    curr_device.phys_modes[j].score = score;
+                    curr_device.phys_modes[j].enabled = EMTRUE;
                 }
             }
         }
@@ -194,8 +193,8 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                     EM_WARN("Vulkan", "Checking device: optional raster mode is unavailable.");
                 }
             } else {
-                EM_INFO("Vulkan", "Found raster queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_RASTER].family_index);
-                curr_device.modes[VULKAN_QUEUE_FAMILY_RASTER] = raster;
+                EM_INFO("Vulkan", "Found raster queue family: %i", curr_device.phys_modes[VULKAN_QUEUE_FAMILY_RASTER].family_index);
+                curr_device.phys_modes[VULKAN_QUEUE_FAMILY_RASTER] = raster;
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_RASTER;
             }
         }
@@ -218,8 +217,8 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                     EM_WARN("Vulkan", "Checking device: optional compute mode is unavailable.");
                 }
             } else {
-                EM_INFO("Vulkan", "Found compute queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_COMPUTE].family_index);
-                curr_device.modes[VULKAN_QUEUE_FAMILY_COMPUTE] = compute;
+                EM_INFO("Vulkan", "Found compute queue family: %i", curr_device.phys_modes[VULKAN_QUEUE_FAMILY_COMPUTE].family_index);
+                curr_device.phys_modes[VULKAN_QUEUE_FAMILY_COMPUTE] = compute;
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_COMPUTE;
             }
         }
@@ -242,8 +241,8 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                     EM_WARN("Vulkan", "Checking device: required transfer mode is unavailable.");
                 }
             } else {
-                EM_INFO("Vulkan", "Found transfer queue family: %i", curr_device.queue_families[VULKAN_QUEUE_FAMILY_TRANSFER].family_index);
-                curr_device.modes[VULKAN_QUEUE_FAMILY_TRANSFER] = transfer;
+                EM_INFO("Vulkan", "Found transfer queue family: %i", curr_device.phys_modes[VULKAN_QUEUE_FAMILY_TRANSFER].family_index);
+                curr_device.phys_modes[VULKAN_QUEUE_FAMILY_TRANSFER] = transfer;
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_TRANSFER; 
             }
         }
@@ -296,13 +295,13 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     f32 queue_priority = 1.0f;
     VkDeviceQueueCreateInfo* queue_create_infos = darray_reserve(VkDeviceQueueCreateInfo, VULKAN_QUEUE_FAMILY_COUNT, allocator);
 
-    for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.queue_families); ++i) {
-        vulkan_phys_queue* queue = &chosen_device.queue_families[i];
-        if (!queue->enabled) continue;
+    for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.phys_modes); ++i) {
+        vulkan_sys_info* sys = &chosen_device.phys_modes[i];
+        if (!sys->enabled) continue;
 
         b8 exists = EMFALSE;
         for (u32 j = 0; j < darray_length(queue_create_infos); ++j) {
-            if (queue_create_infos[j].queueFamilyIndex == queue->family_index) {
+            if (queue_create_infos[j].queueFamilyIndex == sys->family_index) {
                 exists = EMTRUE;
                 break;
             }
@@ -311,7 +310,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         if (!exists) {
             VkDeviceQueueCreateInfo* create_info = darray_push_empty(queue_create_infos);
             create_info->sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            create_info->queueFamilyIndex = queue->family_index;
+            create_info->queueFamilyIndex = sys->family_index;
             create_info->queueCount       = 1;
             create_info->pQueuePriorities = &queue_priority;
         }
@@ -330,25 +329,25 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     device_create_info.pEnabledFeatures = &device_features;
 
     CHECK_VKRESULT(
-        vkCreateDevice(chosen_device.handle, &device_create_info, context->allocator, &context->device.handle),
+        vkCreateDevice(chosen_device.handle, &device_create_info, vk_device->allocator, &vk_device->handle),
         "Failed to create logical device");
     
     // Destroy temp data.
     darray_destroy(queue_create_infos);
 
-    for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.modes); ++i) {
-        vulkan_sys_info* mode_info = &chosen_device.modes[i];
+    for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.phys_modes); ++i) {
+        vulkan_sys_info* mode_info = &chosen_device.phys_modes[i];
 
-        vulkan_sys_state* new_state = &context->modes[i];
-        new_state->family_index = chosen_device.queue_families[i].family_index;
+        vulkan_sys_state* new_state = &vk_device->modes[i];
+        new_state->family_index = chosen_device.phys_modes[i].family_index;
         new_state->commandbufs = darray_from_data(VkCommandBuffer, config->frames_in_flight, NULL, allocator);
-        vkGetDeviceQueue(context->device.handle, new_state->family_index, 0, &new_state->queue);
+        vkGetDeviceQueue(vk_device->handle, new_state->family_index, 0, &new_state->queue);
 
         VkCommandPoolCreateInfo pool_create_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
         pool_create_info.queueFamilyIndex = new_state->family_index;
 
         CHECK_VKRESULT(
-            vkCreateCommandPool(context->device.handle, &pool_create_info, context->allocator, &new_state->pool), 
+            vkCreateCommandPool(vk_device->handle, &pool_create_info, vk_device->allocator, &new_state->pool), 
             "Failed to create mode command pool");
 
         VkCommandBufferAllocateInfo allocate_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
@@ -357,7 +356,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         allocate_info.commandBufferCount = config->frames_in_flight;
 
         CHECK_VKRESULT(
-            vkAllocateCommandBuffers(context->device.handle, &allocate_info, new_state->commandbufs),
+            vkAllocateCommandBuffers(vk_device->handle, &allocate_info, new_state->commandbufs),
             "Failed to allocate mode command buffers");
 
         VkSemaphoreTypeCreateInfo timeline_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
@@ -367,7 +366,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         semaphore_info.pNext = &timeline_info;
 
         CHECK_VKRESULT(
-            vkCreateSemaphore(context->device.handle, &semaphore_info, context->allocator, &new_state->semaphore), 
+            vkCreateSemaphore(vk_device->handle, &semaphore_info, vk_device->allocator, &new_state->semaphore), 
             "Failed to create mode timeline semaphore");
     }
 
@@ -375,8 +374,12 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     return EMBER_RESULT_OK;
 }
 
+/*
+ * Each draw calls wait on the prev draw calls and signals the next, on host if the wheels looped back around before submit finshed then you need to when on the CPU.
+ */
+
 em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emgpu_command_buffer* command_buf) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
+    vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     vulkan_command_context ctx = {};
     ctx.allocator = &device->frame_allocator;
@@ -389,12 +392,6 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
     em_result result = vulkan_decode_command_buffer(device, &ctx, command_buf);
     if (result != EMBER_RESULT_OK) return result;
 
-    VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
-    wait_info.pSemaphores = context->modes.semaphores;
-    wait_info.semaphoreCount = darray_length(context->modes.semaphores);
-    wait_info.pValues = context->modes.wait_values[device->current_frame];
-    vkWaitSemaphores(context->device.handle, &wait_info, UINT64_MAX);
-
     for (u32 i = 0; i < darray_length(ctx.submissions); ++i) {
         const vulkan_command_submission* submission = &ctx.submissions[i];
 
@@ -402,14 +399,15 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
         command_buf_info.commandBuffer = submission->handle;
 
         VkSubmitInfo2 submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
-        submit_info.commandBufferInfoCount = 1;
-        submit_info.pCommandBufferInfos    = &command_buf_info;
+        submit_info.waitSemaphoreInfoCount   = darray_length(submission->waits);
+        submit_info.pWaitSemaphoreInfos      = submission->waits;
+        submit_info.commandBufferInfoCount   = 1;
+        submit_info.pCommandBufferInfos      = &command_buf_info;
+        submit_info.signalSemaphoreInfoCount = darray_length(submission->signals);
+        submit_info.pSignalSemaphoreInfos    = submission->signals;
 
-        vkQueueSubmit2(context->modes[submission->queue].queue, 1, &submit_info, VK_NULL_HANDLE);
+        vkQueueSubmit2(vk_device->modes[submission->queue].queue, 1, &submit_info, VK_NULL_HANDLE);
     }
-
-    for (u32 i = 0; EM_ARRAYSIZE(context->modes); ++i)
-        context->modes.wait_values[device->current_frame][i] = context->modes.values[i];
     return EMBER_RESULT_OK;
 }
 
@@ -424,11 +422,7 @@ em_result emgpu_device_get_capabilities(emgpu_device* device, emgpu_device_capab
 // ----- Raster mode entry point --------------------------
 vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device) {
     vulkan_sys_info info = {};
-    info.enabled    = device->queue_families[VULKAN_QUEUE_FAMILY_RASTER].enabled;
+    info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_RASTER].enabled;
     info.extensions = VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME;
     return info;
-}
-
-em_result vulkan_raster_init() {
-
 }

@@ -8,7 +8,7 @@ em_result emgpu_compute_pipeline_create(
     em_allocator* allocator, 
     const emgpu_compute_pipeline_config* config, 
     emgpu_pipeline* out_compute_pipeline) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
+    vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     out_compute_pipeline->internal_data = mem_allocate(allocator, sizeof(vulkan_pipeline));
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)out_compute_pipeline->internal_data;
@@ -33,9 +33,9 @@ em_result emgpu_compute_pipeline_create(
     // Bundles everything together into a pipeline object. It supports creating many pipelines at one as its a expensive
     // operation. Its also uses a pipeline cache which allows the GPU to store and reuse compiled shader code.
     CHECK_VKRESULT(
-        vkCreateComputePipelines(context->device.handle, NULL, 1, &pipeline_create_info, context->allocator, &vk_pipeline->handle),
+        vkCreateComputePipelines(vk_device->handle, NULL, 1, &pipeline_create_info, vk_device->allocator, &vk_pipeline->handle),
         "Failed to create compute pipeline");
 
-    vkDestroyShaderModule(context->device.handle, pipeline_create_info.stage.module, context->allocator);
+    vkDestroyShaderModule(vk_device->handle, pipeline_create_info.stage.module, vk_device->allocator);
     return EMBER_RESULT_OK;
 }

@@ -10,7 +10,7 @@ em_result emgpu_raster_pipeline_create(
     em_allocator* allocator, 
     const emgpu_raster_pipeline_config* config, 
     emgpu_pipeline* out_pipeline) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
+    vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     out_pipeline->internal_data = mem_allocate(allocator, sizeof(vulkan_pipeline));
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)out_pipeline->internal_data;
@@ -162,11 +162,11 @@ em_result emgpu_raster_pipeline_create(
     // Bundles everything together into a pipeline object. It supports creating many pipelines at one as its a expensive
     // operation. Its also uses a pipeline cache which allows the GPU to store and reuse compiled shader code.
     CHECK_VKRESULT(
-        vkCreateGraphicsPipelines(context->device.handle, NULL, 1, &pipeline_create_info, context->allocator, &vk_pipeline->handle),
+        vkCreateGraphicsPipelines(vk_device->handle, NULL, 1, &pipeline_create_info, vk_device->allocator, &vk_pipeline->handle),
         "Failed to create raster pipeline");
 
     for (u32 i = 0; EM_ARRAYSIZE(shader_stages); ++i)
-        vkDestroyShaderModule(context->device.handle, shader_stages[i].module, context->allocator);
+        vkDestroyShaderModule(vk_device->handle, shader_stages[i].module, vk_device->allocator);
     darray_destroy(colour_formats);
     darray_destroy(attributes);
     return EMBER_RESULT_OK;

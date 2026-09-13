@@ -39,53 +39,38 @@ typedef enum vulkan_queue_family {
 // type is omitted when creating arrays.
 #define VULKAN_QUEUE_FAMILY_COUNT VULKAN_QUEUE_FAMILY_UNIVERSAL
 
-typedef struct vulkan_phys_queue {
-    f64 score;
-    u32 family_index;
-    b8 enabled;
-} vulkan_phys_queue; 
+// Physical device.
+// --------------------------------------------------------
+
+/*
+
+#define DATA_ELEMENTS \
+    ELEMENT(f64, score, scores) \
+    ELEMENT(u32, family_index, family_indexes) \
+    ELEMENT(const char*, extensions, extensions) \
+    ELEMENT(b8, enabled, enables)
+#include "sossoa.h"
+
+DATA_ELEMENT_CARRAY(VULKAN_QUEUE_FAMILY_COUNT)
+*/
 
 typedef struct vulkan_sys_info {
-    b8 enabled;
-    const char* extensions;
-    // u32 queue_count;
-} vulkan_sys_info;
-
-typedef struct vulkan_sys_state {
-    VkQueue queue;
+    f64 score;
     u32 family_index;
-    VkTimelineSemaphore semaphore;
-    VkCommandPool pool;
-    VkCommandBuffer* commandbufs;
-} vulkan_sys_state;
+    const char* extensions;
+    b8 enabled;
+} vulkan_sys_info;
 
 typedef struct vulkan_phys_device {
     VkPhysicalDevice handle;
-    
     emgpu_device_capabilities capabilities;
-    vulkan_phys_queue queue_families[VULKAN_QUEUE_FAMILY_COUNT];
-    vulkan_sys_info modes[VULKAN_QUEUE_FAMILY_COUNT];
-    
+    vulkan_sys_info phys_modes[VULKAN_QUEUE_FAMILY_COUNT];
     i32 heuristic;
 } vulkan_phys_device;
 
-typedef struct vulkan_log_device {
-    VkDevice handle;
-    VkPhysicalDevice physical;
-} vulkan_log_device;
 
-typedef struct vulkan_context {
-    VkInstance instance;
-    VkAllocationCallbacks* allocator;
-    vulkan_log_device device;
-    vulkan_sys_state modes[VULKAN_QUEUE_FAMILY_COUNT];
-} vulkan_context;
-
-typedef struct vulkan_pipeline {
-    VkPipeline handle;
-    VkPipelineLayout layout;
-    VkDescriptorSetLayout descriptor_layout;
-} vulkan_pipeline;
+// Resources.
+// --------------------------------------------------------
 
 typedef struct vulkan_buffer {
     VkBuffer handle;
@@ -98,31 +83,52 @@ typedef struct vulkan_texture {
     VkImageLayout layout;
 } vulkan_texture;
 
+typedef struct vulkan_pipeline {
+    VkPipeline handle;
+    VkPipelineLayout layout;
+    VkDescriptorSetLayout descriptor_layout;
+} vulkan_pipeline;
+
 typedef struct vulkan_renderpass {
     VkRenderPass handle;
 } vulkan_renderpass;
 
+// WSI - Window system interface.
+// --------------------------------------------------------
+
+typedef b8 (*vulkan_presentation_support)(
+        VkInstance instance, 
+        VkPhysicalDevice physical_device, 
+        u32 queue_family_index, 
+        void* user_data);
+
+typedef struct vulkan_wsi {
+    b8 requested;
+
+    vulkan_presentation_support present_support;
+    const char* extensions;
+    void* wsi_user_data;
+    u32 family_index;
+} vulkan_wsi;
+
 typedef struct vulkan_surface {
+    VkSurfaceCapabilitiesKHR capabilities;
     VkSurfaceKHR surface;
     VkSwapchainKHR swapchain;
 
-    VkSurfaceCapabilitiesKHR capabilities;
-    VkColorSpaceKHR colour_space;
     emgpu_texture* frames_in_flight;
     u32 image_index;
+
+    // Config.
+    u32 min_image_count;
+    emgpu_texture_usage usage;
 
     VkSemaphore* image_availables;
     VkSemaphore* render_completes;
 } vulkan_surface;
 
-/*
- * Types of resource dependency:
- *     * Timeline break
- *     * Cross-queue pipeline barrier
- *     * Pipeline barrier
- *     * Binary semaphore
- *     * Renderpass / subpass
- */
+// Decode logic.
+// --------------------------------------------------------
 
 typedef enum managed_resc_type {
     MANAGED_RESOURCE_EMPTY,
@@ -130,29 +136,35 @@ typedef enum managed_resc_type {
     MANAGED_RESOURCE_TEXTURE, // Same as a framebuffer in the system.
 } managed_resc_type;
 
+typedef enum managed_resc_owner {
+    COMMAND_OWNER_PIPELINE,
+    COMMAND_OWNER_RENDERPASS,
+    COMMAND_OWNER_BINARY,
+} managed_resc_owner;
+
+typedef struct resource_state {
+    emgpu_access_flags access;
+    i32 submission_index; // -1 means it's irrevent.
+    VkImageLayout texture_layout; // Valid only when resource is a texture
+    VkSemaphore binary_owner;
+} resource_state;
+
 typedef struct managed_resource {
     managed_resc_type type;
-
-    emgpu_access_flags access;
-    vulkan_queue_family queue;
-
-    // Specific to a texture.
-    VkImageLayout texture_layout;
-
+    resource_state state;
     union {
         emgpu_buffer* buffer;
         emgpu_texture* texture;
     } data;
 } managed_resource;
 
-typedef enum command_owner_type {
-    COMMAND_OWNER_PIPELINE,
-    COMMAND_OWNER_RENDERPASS,
-    COMMAND_OWNER_BINARY,
-} command_owner_type;
+typedef struct resource_use {
+    emgpu_local_resource resource;
+    resource_state state;
+} resource_use;
 
 typedef struct owner_desc {
-    command_owner_type type;
+    managed_resc_owner type;
 
     union {
         const emgpu_pipeline* pipeline;
@@ -160,23 +172,20 @@ typedef struct owner_desc {
     };
 } owner_desc;
 
-typedef struct resource_use {
-    emgpu_local_resource resource;
-    emgpu_access_flags access;
-    vulkan_queue_family queue;
-
-    //specific to a texture.
-    VkImageLayout texture_layout;
-} resource_use;
-
 typedef struct owner_frame {
     owner_desc desc;
     resource_use* uses;
 } owner_frame;
 
+// Submission logic.
+// --------------------------------------------------------
+
 typedef struct vulkan_command_submission {
     vulkan_queue_family queue;
+    u32 edge_count;
     VkCommandBuffer handle;
+    VkSemaphoreSubmitInfo* waits;
+    VkSemaphoreSubmitInfo* signals;
 } vulkan_command_submission;
 
 typedef struct vulkan_command_context {
@@ -194,8 +203,29 @@ typedef struct vulkan_command_context {
     b8 bound_pipeline;
 } vulkan_command_context;
 
+// Logical device.
+// --------------------------------------------------------
+
+typedef struct vulkan_sys_state {
+    VkQueue queue;
+    u32 family_index;
+    VkTimelineSemaphore semaphore;
+    VkCommandPool pool;
+    VkCommandBuffer* commandbufs;
+} vulkan_sys_state;
+
+typedef struct vulkan_device {
+    VkInstance instance;
+    VkAllocationCallbacks* allocator;
+
+    VkDevice handle;
+    VkPhysicalDevice physical;
+    vulkan_sys_state modes[VULKAN_QUEUE_FAMILY_COUNT];
+    vulkan_wsi wsi;
+} vulkan_device;
+
 // Main entry points for device modes.
-// ---------------------------------------
+// --------------------------------------------------------
 
 vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device);
 
@@ -203,7 +233,10 @@ vulkan_sys_info vulkan_compute_setup(vulkan_phys_device* device);
 
 vulkan_sys_info vulkan_transfer_setup(vulkan_phys_device* device);
 
-// ---------------------------------------
+em_result vulkan_extensions_setup(emgpu_device* device, em_allocator* allocator, const emgpu_device_config* config);
+
+// Utilites.
+// --------------------------------------------------------
 
 em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_context* ctx, const emgpu_command_buffer* command_buffer);
 
@@ -220,7 +253,7 @@ b8 vulkan_result_is_success(VkResult result);
 VkFormat vulkan_format_type(emgpu_format format);
 
 // Finds a suitable memory index based on memory requirements, -1 means one could not be found.
-i32 vulkan_memory_index(vulkan_context* context, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags);
+i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags);
 
 // Creates the pipeline and descriptor layouts on top of the pipeline.
 em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allocator, const emgpu_descriptor_desc* descriptors, u32 descriptor_count, emgpu_pipeline* out_pipeline);
@@ -231,6 +264,9 @@ em_result vulkan_create_shader_stage(emgpu_device* device, em_allocator* allocat
 // Fill capabilities structure from physical device.
 // TODO: Maybe get rid of this?
 void vulkan_device_from_capabilities(vulkan_phys_device* curr_device, emgpu_device_capabilities* out_capabilities);
+
+// TODO: THIS FUNCTION ANNOYES ME SO MUCH.
+VkFormat ember_vk_format_type(emgpu_format format);
 
 // Scores a physical GPU based on its overall usefulness.
 u32 score_phys_device(vulkan_phys_device* device);
@@ -250,10 +286,18 @@ VkAttachmentLoadOp vulkan_load_op_type(emgpu_load_op load_op);
 // Converts store op format to a Vulkan format.
 VkAttachmentStoreOp vulkan_store_op_type(emgpu_store_op store_op);
 
+// Finds the nessacery image layout for a access flag, mearly a suggestion
+// if the texture already has a supported image layout it will fall through.
+VkImageLayout vulkan_image_layout(emgpu_access_flags access);
+
+// Converts Ember texture usage to Vulkan texture usage.
+VkImageUsageFlags vulkan_texture_usage(emgpu_texture_usage usage);
+
+// Gives surface colour space for a given Ember format.
+VkColorSpaceKHR vulkan_format_colour_space(emgpu_format format);
+
 // Converts blend factor to a Vulkan format.
 VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor);
 
 // Converts blend op to a Vulkan format.
 VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op);
-
-void vulkan_colour_attachment_type(const emgpu_colour_attachment* attachment, VkRenderingAttachmentInfo* out_attachment);

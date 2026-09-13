@@ -72,14 +72,47 @@ managed_resource* own_resource(vulkan_command_context* ctx, emgpu_local_resource
 
     resource_use* use = darray_push_empty(owner->uses);
     use->resource = handle;
-    use->access = needed_access;
+    use->state.access = needed_access;
+    use->state.submission_index = darray_length(ctx->submissions) - 1;
+    use->state.texture_layout = vulkan_image_layout(needed_access);
+    if (owner->desc.type == COMMAND_OWNER_BINARY) 
+        use->state.binary_owner = owner->desc.binary;
+
     return &ctx->resource_table[(u32)handle]; 
 }
 
 // Pops an owner frame from the submit-stack, releases ownership of resources and
 // emits all nessacery dst Vulkan sync opertions. If there is no stack frames just return.
 void release_resources(vulkan_command_context* ctx) {
+    if (darray_length(ctx->stack) == 0) return;
 
+    owner_frame* owner = darray_last(ctx->stack);
+    
+    for (u32 i = 0; i < darray_length(owner->uses); ++i) {
+        resource_use* use = &owner->uses[i];
+
+        managed_resource* resource = &ctx->resource_table[(u32)use->resource];
+        resource_state prev = resource->state;
+        resource_state next = use->state;
+
+        if (prev.submission_index == next.submission_index) {
+            // Pipeline barrier.
+        }
+        else {
+            ctx->curr_submission->edge_count++;
+            
+            if (prev.binary_owner != VK_NULL_HANDLE) {
+                // Semaphores.
+                VkSemaphoreSubmitInfo* semaphore_info = darray_push_empty(ctx->curr_submission->waits);
+                semaphore_info->semaphore = prev.binary_owner;
+                semaphore_info->stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                //semaphore_info->stageMask = vulkan_wait_stage(next.access);
+            }
+            else {
+                // Timeline break
+            }
+        }
+    }
 }
 
 // Adds the provided surface to the submit-wide list, this implictly means that a surface's
@@ -164,7 +197,7 @@ static void cmd_bind_vertex_buffers(vulkan_command_context* ctx, u32 count, emgp
 }
 
 em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_context* ctx, const emgpu_command_buffer* commmand_buf) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
+    vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     cmd_payload* payload = NULL;
     while (emnat_poll_command_buffer(commmand_buf, (void**)&payload)) {
@@ -175,8 +208,8 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
 
             // The guranteed lifetime of a command buffer is the point of last command buffer
             // that uses its resources in the submission, past that it can't be used so check for whetever it has any dependecies.
-            if (darray_length(ctx->curr_submission->edges) == 0)
-                command_buffer = context->modes[needed_queue].commandbufs[device->current_frame];
+            if (ctx->curr_submission && ctx->curr_submission->edge_count == 0)
+                command_buffer = vk_device->modes[needed_queue].commandbufs[device->current_frame];
 
             if (ctx->curr_submission)
                 end_submission(ctx, ctx->curr_submission);
@@ -267,20 +300,23 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
                 ;
                 managed_resource empty = {};
                 empty.type   = MANAGED_RESOURCE_EMPTY;
-                empty.access = EMBER_ACCESS_NONE;
-                empty.queue  = VULKAN_QUEUE_FAMILY_UNIVERSAL;
+                empty.state.access = EMBER_ACCESS_NONE;
+                empty.state.submission_index = -1;
 
                 insert_resource(ctx, payload->empty_resource, &empty);
                 break;
 
             case COMMAND_IMPORT_TEXTURE:
                 ;
-                managed_resource texture = {};
-                texture.type   = MANAGED_RESOURCE_TEXTURE;
-                texture.access = EMBER_ACCESS_NONE;
-                texture.queue  = VULKAN_QUEUE_FAMILY_UNIVERSAL;
 
+                managed_resource texture = {};
+                texture.type = MANAGED_RESOURCE_TEXTURE;
+                texture.state.access           = EMBER_ACCESS_NONE;
+                texture.state.submission_index = -1;
                 texture.data.texture = payload->import_texture.texture;
+
+                vulkan_texture* vk_texture = (vulkan_texture*)texture.data.texture->internal_data;
+                texture.state.texture_layout = vk_texture->layout;
                 insert_resource(ctx, payload->import_texture.dst_framebuffer, &texture);
                 break;
 
@@ -295,11 +331,13 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
                 declare_owner(ctx, &binary_owner);
 
                 managed_resource frame_in_flight = {};
-                frame_in_flight.type   = MANAGED_RESOURCE_BUFFER;
-                frame_in_flight.access = EMBER_ACCESS_NONE;
-                frame_in_flight.queue  = VULKAN_QUEUE_FAMILY_UNIVERSAL;
-
+                frame_in_flight.type = MANAGED_RESOURCE_BUFFER;
+                frame_in_flight.state.access           = EMBER_ACCESS_NONE;
+                frame_in_flight.state.submission_index = -1;
                 frame_in_flight.data.texture = &vk_surface->frames_in_flight[vk_surface->image_index];
+
+                vulkan_texture* vk_frame_in_flight = (vulkan_texture*)frame_in_flight.data.texture->internal_data;
+                texture.state.texture_layout = vk_frame_in_flight->layout;
                 insert_resource(ctx, payload->acquire_surface.dst_framebuffer, &frame_in_flight);
 
                 release_resources(ctx);

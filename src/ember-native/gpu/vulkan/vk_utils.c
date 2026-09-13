@@ -4,9 +4,9 @@
 
 #include "utils/darray.h"
 
-i32 vulkan_memory_index(vulkan_context* context, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags) {
+i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags) {
     VkPhysicalDeviceMemoryProperties device_memories = {};
-    vkGetPhysicalDeviceMemoryProperties(context->device.physical, &device_memories);
+    vkGetPhysicalDeviceMemoryProperties(vk_device->physical, &device_memories);
 
     for (u32 i = 0; i < device_memories.memoryTypeCount; ++i) {
         if (requirements->memoryTypeBits & (1 << i) && (device_memories.memoryTypes[i].propertyFlags & (u32)flags) == flags)
@@ -45,7 +45,7 @@ VkShaderStageFlags vulkan_shader_stage_type(emgpu_shader_stage_type stage_type) 
 }
 
 em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allocator, const emgpu_descriptor_desc* descriptors, u32 descriptor_count, emgpu_pipeline* out_pipeline) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
+    vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)out_pipeline->internal_data;
 
@@ -64,7 +64,7 @@ em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allo
 		layout_create_info.bindingCount = darray_length(descriptor_bindings);
 		layout_create_info.pBindings    = descriptor_bindings;
 		CHECK_VKRESULT(
-            vkCreateDescriptorSetLayout(context->device.handle, &layout_create_info, context->allocator, &vk_pipeline->descriptor_layout),
+            vkCreateDescriptorSetLayout(vk_device->handle, &layout_create_info, vk_device->allocator, &vk_pipeline->descriptor_layout),
             "Failed to create Vulkan descriptor set layout when creating pipeline");
 
         darray_destroy(descriptor_bindings);
@@ -74,14 +74,14 @@ em_result vulkan_create_pipeline_layout(emgpu_device* device, em_allocator* allo
     layout_create_info.setLayoutCount = 1;
     layout_create_info.pSetLayouts = &vk_pipeline->descriptor_layout;
     CHECK_VKRESULT(
-        vkCreatePipelineLayout(context->device.handle, &layout_create_info, context->allocator, &vk_pipeline->layout),
+        vkCreatePipelineLayout(vk_device->handle, &layout_create_info, vk_device->allocator, &vk_pipeline->layout),
         "Failed to create pipeline layout");
 
     return EMBER_RESULT_OK;
 }
 
 em_result vulkan_create_shader_stage(emgpu_device* device, em_allocator* allocator, const emgpu_shader_src* shader, VkShaderStageFlags shader_type, VkPipelineShaderStageCreateInfo* out_shader_stage) {
-    vulkan_context* context = (vulkan_context*)device->internal_context;
+    vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     if (!shader->data || !shader->size) {
         EM_ERROR("Vulkan", "Invalid shader source in pipeline.");
@@ -105,7 +105,7 @@ em_result vulkan_create_shader_stage(emgpu_device* device, em_allocator* allocat
     module_create_info.pCode = shader->data;
 
     CHECK_VKRESULT(
-        vkCreateShaderModule(context->device.handle, &module_create_info, context->allocator, &shader_stage_info.module),
+        vkCreateShaderModule(vk_device->handle, &module_create_info, vk_device->allocator, &shader_stage_info.module),
         "Failed to create compute shader module");
 
     return EMBER_RESULT_OK;
