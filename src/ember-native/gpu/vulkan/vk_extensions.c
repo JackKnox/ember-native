@@ -64,13 +64,14 @@ em_result vulkan_extensions_setup(emgpu_device* device, em_allocator* allocator,
         if (strcmp(desc->name, "EMGPU_EXT_emwin_surface") == 0 && 
                 EMBER_VERSIONS_COMPLIANT(desc->version, EMBER_VERSION)) {
             // emwin_surface extension.
-            emgpu_emwin_surface_params* params = (emgpu_emwin_surface_params*)desc->user_data;
+            emgpu_emwin_surface_params* params = (emgpu_emwin_surface_params*)desc->user_data.bytes;
             vk_device->wsi.requested       = EMTRUE;
             vk_device->wsi.extensions      = emnat_vulkan_wsi_extensions(params->desktop);
             vk_device->wsi.present_support = emnat_vulkan_device_presentation_support;
             vk_device->wsi.wsi_user_data   = (void*)params->desktop;
 
             params->out_extension->create_surface = vk_create_emwin_surface;
+            continue;
         }
 
         // Everthing thats fell through

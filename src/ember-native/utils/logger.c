@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-static char message_buf[64] = {};
+#include <signal.h>
+
+static char message_buf[512] = {};
 
 void emnat_printf(emplat_log_level log_level, const char* message, ...) {
     va_list args;
@@ -22,4 +24,8 @@ void emnat_printf(emplat_log_level log_level, const char* message, ...) {
     va_end(args);
 
     emplat_print(log_level, message_buf);
+
+    if (log_level == EMBER_LOG_LEVEL_FATAL) {
+        raise(SIGTRAP);
+    }
 }

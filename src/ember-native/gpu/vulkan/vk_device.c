@@ -3,10 +3,34 @@
 
 #include "utils/darray.h"
 
+VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+	VkDebugUtilsMessageTypeFlagsEXT message_types,
+	const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
+	void* user_data) {
+	switch (message_severity) {
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+		EM_ERROR("Vulkan", callback_data->pMessage);
+		break;
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+		EM_WARN("Vulkan", callback_data->pMessage);
+		break;
+
+	default:
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+		EM_TRACE("Vulkan", callback_data->pMessage);
+		break;
+	}
+
+	return VK_FALSE;
+}
+
 em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* config, emgpu_device* out_device) {
     // Allocate massive internal context.
     out_device->internal_context  = mem_allocate(allocator, sizeof(vulkan_device));
     vulkan_device* vk_device = (vulkan_device*)out_device->internal_context;
+
+    out_device->frame_allocator = config->frame_allocator;
 
     EM_INFO("GPU", "Initialising GPU device with name: %s", config->debug_name);
 
@@ -14,10 +38,16 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
 	const char** required_extensions = darray_create(const char*, allocator);
 	const char** required_validation_layers = darray_create(const char*, allocator);
 
-    // TODO: Gather emgpu_device extension data.
-    //
     em_result result = vulkan_extensions_setup(out_device, allocator, config);
     if (result != EMBER_RESULT_OK) return result;
+
+    if (vk_device->wsi.requested) {
+        darray_push(required_extensions, vk_device->wsi.extensions);
+        darray_push(required_extensions, "VK_KHR_surface");
+    }
+    
+    darray_push(required_extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    darray_push(required_validation_layers, "VK_LAYER_KHRONOS_validation");
     
     // ----- Vulkan instance ---------------------------------
     // Verify exsistence of extensions
@@ -98,6 +128,30 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
 
     // TODO: Setup validation layers, Ember is supposed to be the ultimate solution and not another common API lib
     //       so this isn't very important except for development.
+    VkDebugUtilsMessengerCreateInfoEXT debug_create_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+    debug_create_info.messageSeverity = 
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT    |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    debug_create_info.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT     |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+    debug_create_info.pfnUserCallback = vk_debug_callback;
+
+    PFN_vkCreateDebugUtilsMessengerEXT create_debug_messenger = 
+        (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(vk_device->instance, "vkCreateDebugUtilsMessengerEXT");
+
+    EM_INFO("Vulkan", "Creating Vulkan validation layers.");
+
+    CHECK_VKRESULT(
+        create_debug_messenger(
+            vk_device->instance, 
+            &debug_create_info, 
+            vk_device->allocator, 
+            &vk_device->debug_messanger),
+        "Failed to create internal Vulkan debug messenger");
 
 	// Clean up temp arrays
     darray_destroy(supported_extensions);
@@ -319,9 +373,13 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     EM_TRACE("Vulkan", "Requesting %i unique queue families.", darray_length(queue_create_infos));
     
     // Fill create info
+    VkPhysicalDeviceVulkan12Features timeline_semaphores = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+    timeline_semaphores.timelineSemaphore = EMTRUE;
+
     VkPhysicalDeviceFeatures device_features = {};
 
     VkDeviceCreateInfo device_create_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
+    device_create_info.pNext = &timeline_semaphores;
     device_create_info.queueCreateInfoCount = darray_length(queue_create_infos);
     device_create_info.pQueueCreateInfos = queue_create_infos;
     //device_create_info.enabledExtensionCount = darray_length(required_device_extensions);
@@ -331,6 +389,8 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     CHECK_VKRESULT(
         vkCreateDevice(chosen_device.handle, &device_create_info, vk_device->allocator, &vk_device->handle),
         "Failed to create logical device");
+
+    vk_device->physical = chosen_device.handle;
     
     // Destroy temp data.
     darray_destroy(queue_create_infos);
@@ -383,13 +443,14 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
 
     vulkan_command_context ctx = {};
     ctx.allocator = &device->frame_allocator;
+    ctx.command_buf = command_buf;
     ctx.submissions = darray_create(vulkan_command_context, ctx.allocator);
 
     // This is the big boy function; it decodes the entire command buffer and fills
     // the command context with submissions and surface calls to hand directly to the queue.
     // It also manages all the resource depenedecies and inserts dependency break all for
     // use, see vk_decoder.c.
-    em_result result = vulkan_decode_command_buffer(device, &ctx, command_buf);
+    em_result result = vulkan_decode_command_buffer(device, &ctx);
     if (result != EMBER_RESULT_OK) return result;
 
     for (u32 i = 0; i < darray_length(ctx.submissions); ++i) {
@@ -406,8 +467,11 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
         submit_info.signalSemaphoreInfoCount = darray_length(submission->signals);
         submit_info.pSignalSemaphoreInfos    = submission->signals;
 
-        vkQueueSubmit2(vk_device->modes[submission->queue].queue, 1, &submit_info, VK_NULL_HANDLE);
+        CHECK_VKRESULT(
+            vkQueueSubmit2(vk_device->modes[submission->queue].queue, 1, &submit_info, VK_NULL_HANDLE), 
+            "Failed to submit to device queue");
     }
+
     return EMBER_RESULT_OK;
 }
 
@@ -416,7 +480,7 @@ void emgpu_device_shutdown(em_allocator* allocator, emgpu_device* device) {
 }
 
 em_result emgpu_device_get_capabilities(emgpu_device* device, emgpu_device_capabilities* out_capabilities) {
-    
+    return EMBER_RESULT_OK;
 }
 
 // ----- Raster mode entry point --------------------------

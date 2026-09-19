@@ -39,6 +39,8 @@ em_result emgpu_surface_resize(
         swapchain_create_info.pQueueFamilyIndices = queue_family_indices;
         swapchain_create_info.queueFamilyIndexCount = 2;
     }
+    
+    return EMBER_RESULT_OK;
 }
 
 void emgpu_surface_destroy(

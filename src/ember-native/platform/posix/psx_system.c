@@ -12,7 +12,7 @@
 
 void* system_malloc(em_allocator* allocator, u64 size, u64 alignment) {
 	if (!alignment) {
-		return malloc(size);
+		return memset(malloc(size), 0, size);
 	}
 
     if (alignment < sizeof(void*)) alignment = sizeof(void*);

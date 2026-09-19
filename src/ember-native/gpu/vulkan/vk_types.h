@@ -190,6 +190,7 @@ typedef struct vulkan_command_submission {
 
 typedef struct vulkan_command_context {
     em_allocator* allocator;
+    const emgpu_command_buffer* command_buf;
 
     owner_frame* stack;
 
@@ -216,6 +217,7 @@ typedef struct vulkan_sys_state {
 
 typedef struct vulkan_device {
     VkInstance instance;
+    VkDebugUtilsMessengerEXT debug_messanger;
     VkAllocationCallbacks* allocator;
 
     VkDevice handle;
@@ -238,7 +240,7 @@ em_result vulkan_extensions_setup(emgpu_device* device, em_allocator* allocator,
 // Utilites.
 // --------------------------------------------------------
 
-em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_context* ctx, const emgpu_command_buffer* command_buffer);
+em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_context* ctx);
 
 // Finds a suitable memory index based on memory requirements, -1 means one could not be found.
 i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags);
