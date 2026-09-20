@@ -19,6 +19,8 @@ em_result new_submission(vulkan_command_context* ctx, vulkan_queue_family family
     vulkan_command_submission* new_submission = darray_push_empty(ctx->submissions);
     new_submission->handle = command_buffer;
     new_submission->queue = family;
+    new_submission->waits = darray_create(VkSemaphoreSubmitInfo, ctx->allocator);
+    new_submission->signals = darray_create(VkSemaphoreSubmitInfo, ctx->allocator);
 
     VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     CHECK_VKRESULT(
@@ -40,6 +42,7 @@ void end_submission(vulkan_command_context* ctx, vulkan_command_submission* subm
 void declare_owner(vulkan_command_context* ctx, owner_desc* owner) {
     owner_frame* frame = darray_push_empty(ctx->stack);
     frame->desc = *owner;
+    frame->uses = darray_create(resource_use, ctx->allocator);
 }
 
 // This inserts a resource into the system based on the `dst_handle` and the currently
@@ -153,6 +156,27 @@ static void begin_renderpass(vulkan_command_context* ctx, cmd_payload* payload) 
     u32 colour_attachment_count = payload->size / sizeof(emgpu_colour_attachment);
     VkRenderingAttachmentInfo* colour_attachments = darray_reserve(VkRenderingAttachmentInfo, colour_attachment_count, ctx->allocator);
 
+    vulkan_texture* texture = (vulkan_texture*)ctx->resource_table[(u32)payload->colour_attachments[0].framebuffer].data.texture->internal_data;
+
+    VkImageMemoryBarrier2 image_barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    image_barrier.srcAccessMask = VK_ACCESS_2_NONE;
+    image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    image_barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    image_barrier.image = texture->handle;
+
+    image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_barrier.subresourceRange.layerCount = 1;
+    image_barrier.subresourceRange.levelCount = 1;
+
+    VkDependencyInfo dependency_info = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+    dependency_info.imageMemoryBarrierCount = 1;
+    dependency_info.pImageMemoryBarriers = &image_barrier;
+    vkCmdPipelineBarrier2(ctx->curr_submission->handle, 
+            &dependency_info);
+
     for (u32 i = 0; i < colour_attachment_count; ++i) {
         const emgpu_colour_attachment* attachment = &payload->colour_attachments[i];
 
@@ -162,7 +186,7 @@ static void begin_renderpass(vulkan_command_context* ctx, cmd_payload* payload) 
         managed_resource* resc = own_resource(ctx, attachment->framebuffer, EMBER_ACCESS_COLOUR_ATTACHMENT_WRITE);
         vulkan_texture* vk_framebuffer = (vulkan_texture*)resc->data.texture->internal_data;
         vk_attachment->imageView = vk_framebuffer->view;
-        vk_attachment->imageLayout = vk_framebuffer->layout;
+        vk_attachment->imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         vk_attachment->loadOp = vulkan_load_op_type(attachment->load_op);
         vk_attachment->storeOp = vulkan_store_op_type(attachment->store_op);
         vk_attachment->clearValue.color.float32[0] = ((attachment->clear_colour >> 24) & 0xFF) / 255.0f;
@@ -197,15 +221,14 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
 
     cmd_payload payload = {};
     while (emnat_poll_command_buffer(ctx->command_buf, &payload)) {
-        EM_INFO("Vulkan", "Decodeded command: %i", (u32)payload.type);
         vulkan_queue_family needed_queue = command_queue_family(payload.type);
-        if (!ctx->curr_submission || ctx->curr_submission->queue != needed_queue) {
+        if ((!ctx->curr_submission || ctx->curr_submission->queue != needed_queue) && needed_queue != VULKAN_QUEUE_FAMILY_UNIVERSAL) {
             // Null handle allocates a new handle.
             VkCommandBuffer command_buffer = VK_NULL_HANDLE;
 
             // The guranteed lifetime of a command buffer is the point of last command buffer
             // that uses its resources in the submission, past that it can't be used so check for whetever it has any dependecies.
-            if (ctx->curr_submission && ctx->curr_submission->edge_count == 0)
+            if (!ctx->curr_submission || ctx->curr_submission->edge_count == 0)
                 command_buffer = vk_device->modes[needed_queue].commandbufs[device->current_frame];
 
             if (ctx->curr_submission)
@@ -324,6 +347,16 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
                 binary_owner.type = COMMAND_OWNER_BINARY;
                 binary_owner.binary = vk_surface->image_availables[vk_surface->image_index];
                 declare_owner(ctx, &binary_owner);
+                
+                CHECK_VKRESULT(
+                    vkAcquireNextImageKHR(
+                        vk_device->handle,
+                        vk_surface->swapchain,
+                        UINT64_MAX,
+                        binary_owner.binary,
+                        VK_NULL_HANDLE,
+                        &vk_surface->image_index), 
+                    "Failed to acquire next surface texture");
 
                 managed_resource frame_in_flight = {};
                 frame_in_flight.type = MANAGED_RESOURCE_BUFFER;

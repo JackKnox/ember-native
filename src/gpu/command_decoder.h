@@ -9,6 +9,8 @@
 #include <ember/gpu/surface.h>
 
 typedef enum cmd_payload_type {
+    COMMAND_EMPTY, // Prevents against corrupted memory.
+
     COMMAND_BEGIN_COMPUTEPASS,
     COMMAND_DISPATCH,
     COMMAND_END_COMPUTEPASS,
@@ -35,6 +37,11 @@ typedef enum cmd_payload_type {
     COMMAND_COLOUR_ATTACHMENTS,
     COMMAND_BIND_VERTEX_BUFFERS
 } cmd_payload_type;
+
+typedef struct cmd_header {
+    cmd_payload_type type;
+    u64 size;
+} cmd_header;
 
 typedef struct {
     const emgpu_pipeline* pipeline;

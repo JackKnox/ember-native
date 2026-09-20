@@ -1,9 +1,7 @@
 #include "defines.h"
-#include "ember/gpu/types.h"
 #include "vk_types.h"
 
 #include "utils/darray.h"
-#include <vulkan/vulkan_core.h>
 
 i32 vulkan_memory_index(vulkan_device* vk_device, VkMemoryRequirements* requirements, VkMemoryPropertyFlags flags) {
     VkPhysicalDeviceMemoryProperties device_memories = {};
@@ -297,6 +295,31 @@ VkBufferUsageFlags vulkan_buffer_usage(emgpu_buffer_usage usage) {
     return vk_usage;
 }
 
+VkFilter vulkan_filter_type(emgpu_filter_type type) {
+    switch (type) {
+    case EMBER_FILTER_TYPE_NEAREST: return VK_FILTER_NEAREST; break;
+    case EMBER_FILTER_TYPE_LINEAR: return VK_FILTER_LINEAR; break;
+
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported filter type");
+        break;
+    }
+}
+
+VkSamplerAddressMode vulkan_address_mode(emgpu_address_mode address_mode) {
+    switch (address_mode) {
+    case EMBER_ADDRESS_MODE_REPEAT: return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    case EMBER_ADDRESS_MODE_MIRRORED_REPEAT: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+    case EMBER_ADDRESS_MODE_CLAMP_TO_EDGE: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    case EMBER_ADDRESS_MODE_CLAMP_TO_BORDER: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    case EMBER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+    default:
+        EM_ASSERT(EMFALSE && "Unsupported sampler address mode");
+        break;
+    }
+}
+
 VkImageUsageFlags vulkan_texture_usage(emgpu_texture_usage usage) {
     VkImageUsageFlags vk_usage = 0;
     if (usage & EMBER_TEXTURE_USAGE_STORAGE) vk_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
@@ -421,8 +444,24 @@ VkFormat vulkan_format_type(emgpu_format format) {
     }
 }
 
-VkFormat ember_vk_format_type(emgpu_format format) {
+emgpu_format ember_vk_format_type(VkFormat format) {
+     switch (format) {
+        // --- BGRA / BGR ---
+        case VK_FORMAT_B8G8R8_UNORM:     return EMGPU_FORMAT_BGR8_UNORM;
+        case VK_FORMAT_B8G8R8_SNORM:     return EMGPU_FORMAT_BGR8_SNORM;
+        case VK_FORMAT_B8G8R8_UINT:      return EMGPU_FORMAT_BGR8_UINT;
+        case VK_FORMAT_B8G8R8_SINT:      return EMGPU_FORMAT_BGR8_SINT;
+        case VK_FORMAT_B8G8R8_SRGB:      return EMGPU_FORMAT_BGR8_SRGB;
 
+        case VK_FORMAT_B8G8R8A8_UNORM:    return EMGPU_FORMAT_BGRA8_UNORM;
+        case VK_FORMAT_B8G8R8A8_SNORM:    return EMGPU_FORMAT_BGRA8_SNORM;
+        case VK_FORMAT_B8G8R8A8_UINT:     return EMGPU_FORMAT_BGRA8_UINT;
+        case VK_FORMAT_B8G8R8A8_SINT:     return EMGPU_FORMAT_BGRA8_SINT;
+        case VK_FORMAT_B8G8R8A8_SRGB:     return EMGPU_FORMAT_BGRA8_SRGB;
+
+        default:
+            return VK_FORMAT_UNDEFINED;
+    }   
 }
 
 em_result em_result_from_vulkan_result(VkResult result) {

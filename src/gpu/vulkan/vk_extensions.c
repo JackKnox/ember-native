@@ -52,7 +52,7 @@ em_result vk_create_emwin_surface(
 
     vk_surface->min_image_count = config->min_texture_count;
     vk_surface->usage = config->usage;
-    return emgpu_surface_resize(device, out_surface, config->window->size);
+    return emgpu_surface_resize(device, allocator, out_surface, config->window->size);
 }
 
 em_result vulkan_extensions_setup(emgpu_device* device, em_allocator* allocator, const emgpu_device_config* config) {

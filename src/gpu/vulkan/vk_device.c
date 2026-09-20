@@ -31,6 +31,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     vulkan_device* vk_device = (vulkan_device*)out_device->internal_context;
 
     out_device->frame_allocator = config->frame_allocator;
+    vk_device->frames_in_flight = config->frames_in_flight;
 
     EM_INFO("GPU", "Initialising GPU device with name: %s", config->debug_name);
 
@@ -106,7 +107,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         EMBER_VERSION_MAJOR(EMBER_VERSION), 
         EMBER_VERSION_MINOR(EMBER_VERSION), 
         EMBER_VERSION_PATCH(EMBER_VERSION));
-    app_info.apiVersion         = VK_API_VERSION_1_2;
+    app_info.apiVersion         = VK_API_VERSION_1_3;
     
     VkInstanceCreateInfo create_info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	create_info.pApplicationInfo        = &app_info;
@@ -373,17 +374,24 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     EM_TRACE("Vulkan", "Requesting %i unique queue families.", darray_length(queue_create_infos));
     
     // Fill create info
+    VkPhysicalDeviceVulkan13Features dynamic_rendering = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+    dynamic_rendering.dynamicRendering = EMTRUE;
+    dynamic_rendering.synchronization2 = EMTRUE;
+
     VkPhysicalDeviceVulkan12Features timeline_semaphores = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+    timeline_semaphores.pNext = &dynamic_rendering;
     timeline_semaphores.timelineSemaphore = EMTRUE;
 
     VkPhysicalDeviceFeatures device_features = {};
+
+    const char* device_extensions[] = { "VK_KHR_dynamic_rendering", "VK_KHR_swapchain" };
 
     VkDeviceCreateInfo device_create_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
     device_create_info.pNext = &timeline_semaphores;
     device_create_info.queueCreateInfoCount = darray_length(queue_create_infos);
     device_create_info.pQueueCreateInfos = queue_create_infos;
-    //device_create_info.enabledExtensionCount = darray_length(required_device_extensions);
-    //device_create_info.ppEnabledExtensionNames = required_device_extensions;
+    device_create_info.enabledExtensionCount = EM_ARRAYSIZE(device_extensions);
+    device_create_info.ppEnabledExtensionNames = device_extensions;
     device_create_info.pEnabledFeatures = &device_features;
 
     CHECK_VKRESULT(
@@ -430,6 +438,9 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
             "Failed to create mode timeline semaphore");
     }
 
+    if (vk_device->wsi.requested) 
+        vkGetDeviceQueue(vk_device->handle, vk_device->wsi.family_index, 0, &vk_device->wsi.queue);
+
     EM_INFO("Vulkan", "GPU device successfuly initialized.");
     return EMBER_RESULT_OK;
 }
@@ -445,6 +456,9 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
     ctx.allocator = &device->frame_allocator;
     ctx.command_buf = command_buf;
     ctx.submissions = darray_create(vulkan_command_context, ctx.allocator);
+    ctx.surfaces    = darray_create(emgpu_surface*, ctx.allocator);
+    ctx.stack       = darray_create(owner_frame, ctx.allocator);
+    ctx.resource_table = mem_allocate(ctx.allocator, sizeof(managed_resource) * command_buf->current_resource_idx);
 
     // This is the big boy function; it decodes the entire command buffer and fills
     // the command context with submissions and surface calls to hand directly to the queue.
@@ -470,6 +484,23 @@ em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emg
         CHECK_VKRESULT(
             vkQueueSubmit2(vk_device->modes[submission->queue].queue, 1, &submit_info, VK_NULL_HANDLE), 
             "Failed to submit to device queue");
+    }
+
+    for (u32 i = 0; i < darray_length(ctx.surfaces); ++i) {
+        emgpu_surface* surface = ctx.surfaces[i];
+        vulkan_surface* vk_surface = (vulkan_surface*)surface->internal_data;
+
+        VkPresentInfoKHR present_info = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+        present_info.waitSemaphoreCount = 1;
+        present_info.pWaitSemaphores    = &vk_surface->render_completes[vk_surface->image_index];
+        present_info.swapchainCount     = 1;
+        present_info.pSwapchains        = &vk_surface->swapchain;
+        present_info.pImageIndices      = &vk_surface->image_index;
+
+        CHECK_VKRESULT(
+            vkQueuePresentKHR(
+                vk_device->wsi.queue, &present_info), 
+            "Failed to present swapchains to queue");
     }
 
     return EMBER_RESULT_OK;

@@ -77,10 +77,21 @@ typedef struct vulkan_buffer {
     VkDeviceMemory memory;
 } vulkan_buffer;
 
+typedef struct vulkan_texture_ext_config {
+    VkImage image_override;
+} vulkan_texture_ext_config;
+
 typedef struct vulkan_texture {
-    VkImage image;
+    VkImage handle;
+    VkDeviceMemory memory;
+
     VkImageView view;
+    VkSampler sampler;
     VkImageLayout layout;
+
+    // Indicates whetever the image belongs to the texture.
+    // Used by the WSI.
+    b8 overrided_image;
 } vulkan_texture;
 
 typedef struct vulkan_pipeline {
@@ -109,6 +120,7 @@ typedef struct vulkan_wsi {
     const char* extensions;
     void* wsi_user_data;
     u32 family_index;
+    VkQueue queue;
 } vulkan_wsi;
 
 typedef struct vulkan_surface {
@@ -216,6 +228,7 @@ typedef struct vulkan_sys_state {
 } vulkan_sys_state;
 
 typedef struct vulkan_device {
+    u32 frames_in_flight;
     VkInstance instance;
     VkDebugUtilsMessengerEXT debug_messanger;
     VkAllocationCallbacks* allocator;
@@ -285,7 +298,14 @@ VkBlendFactor vulkan_blend_factor_type(emgpu_blend_factor blend_factor);
 // Converts blend op to a Vulkan format.
 VkBlendOp vulkan_blend_op_type(emgpu_blend_op blend_op);
 
+// Converts a Ember buffer usage flag to Vulkan.
 VkBufferUsageFlags vulkan_buffer_usage(emgpu_buffer_usage usage);
+
+// Converts filter type to a Vulkan format.
+VkFilter vulkan_filter_type(emgpu_filter_type type);
+
+// Converts address mode to a Vulkan format.
+VkSamplerAddressMode vulkan_address_mode(emgpu_address_mode address_mode);
 
 // Converts Ember texture usage to Vulkan texture usage.
 VkImageUsageFlags vulkan_texture_usage(emgpu_texture_usage usage);
@@ -304,7 +324,7 @@ VkImageLayout vulkan_image_layout(emgpu_access_flags access);
 VkFormat vulkan_format_type(emgpu_format format);
 
 // TODO: THIS FUNCTION ANNOYES ME SO MUCH.
-VkFormat ember_vk_format_type(emgpu_format format);
+emgpu_format ember_vk_format_type(VkFormat format);
 
 // Converts Vulkan error code to engine result code.
 em_result em_result_from_vulkan_result(VkResult result);

@@ -4,7 +4,13 @@ project(ember-native VERSION 0.5.0 LANGUAGES C)
 include(FetchContent)
 set(CMAKE_C_STANDARD 99)
 
-if(APPLE)
+##
+set(MAIN_PROJECT OFF)
+if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(MAIN_PROJECT ON)
+endif()
+
+if (APPLE)
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         set(EMBER_NATIVE_PLATFORM_MACOS ON)
     # elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")

@@ -7,7 +7,7 @@
 
 #include <signal.h>
 
-static char message_buf[512] = {};
+static char message_buf[1024] = {};
 
 void emnat_printf(emplat_log_level log_level, const char* message, ...) {
     va_list args;
