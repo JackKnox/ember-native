@@ -45,9 +45,12 @@ option(EMBER_NATIVE_POISON_MEMORY          "Poison freed/uninitialized memory"  
 
 add_subdirectory(src)
 
-FetchContent_Declare(
-    Ember
-    GIT_REPOSITORY https://github.com/JackKnox/Ember.git
-    GIT_TAG        master
-)
-FetchContent_MakeAvailable(Ember)
+# Force a user to download the Ember headers seperatly
+if (MAIN_PROJECT)
+    FetchContent_Declare(
+        Ember
+        GIT_REPOSITORY https://github.com/JackKnox/Ember.git
+        GIT_TAG        master
+    )
+    FetchContent_MakeAvailable(Ember)
+endif()
