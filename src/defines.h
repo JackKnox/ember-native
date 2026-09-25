@@ -7,6 +7,11 @@
 
 #include <ember/platform/logger.h>
 
+u64 alignment_ptr(u64 v, u64 alignment);
+void* mem_allocate(em_allocator* allocator, u64 size);
+void mem_free(em_allocator* allocator, void* block, u64 size);
+void* mem_reallocate(em_allocator* allocator, void* block, u64 old_size, u64 new_size);
+
 void emnat_printf(emplat_log_level log_level, const char* message, ...);
 
 #ifndef EM_LOG
@@ -31,10 +36,6 @@ void emnat_printf(emplat_log_level log_level, const char* message, ...);
 
 #ifndef EM_TRACE
 #define EM_TRACE(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_TRACE, subsystem, message, __VA_ARGS__)
-#endif
-
-#ifndef EM_DEV
-#define EM_DEV(subsystem, message, ...) EM_LOG(EMBER_LOG_LEVEL_DEV, subsystem, message, __VA_ARGS__)
 #endif
 
 #if EMBER_DIST
