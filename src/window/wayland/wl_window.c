@@ -5,11 +5,11 @@
 
 em_result emwin_window_open(em_allocator* allocator, const emwin_window_config* config, emwin_monitor_id id, emwin_window* out_window, emwin_desktop** out_desktop) {
     if (*out_desktop == NULL) {
+        EM_TRACE("Wayland", "No desktop passed to window; creating one");
         em_result result = emnat_wayland_desktop_create(allocator, out_desktop);
         if (result != EMBER_RESULT_OK)
             return result;
     } 
-
 
 	out_window->internal_context = mem_allocate(allocator, sizeof(wayland_window));
 	wayland_window* internal_window = (wayland_window*)out_window->internal_context;
@@ -23,6 +23,8 @@ em_result emwin_window_open(em_allocator* allocator, const emwin_window_config* 
 	u32 string_length = (strlen(config->title) + 1) * sizeof(char);
 	out_window->title = mem_allocate(allocator, string_length);
 	memcpy(out_window->title, config->title, string_length);
+
+    EM_INFO("Wayland", "Creating window: '%s', requesting: (%i, %i)", out_window->title, out_window->size.x, out_window->size.y);
 
 	// Create a wayland surface. A surface is just a managed buffer with an assigned role (Cursor, Window, etc.)
 	internal_window->surface = wl_compositor_create_surface(internal_desktop->compositor);

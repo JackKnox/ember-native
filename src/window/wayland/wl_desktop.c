@@ -1,4 +1,5 @@
 #include "defines.h"
+#include "ember/core.h"
 #include "wl_types.h"
 
 #include <ember/window/desktop.h>
@@ -68,6 +69,7 @@ void registry_global_add(void* data,
 			  const char* interface, uint32_t version) {
 	emwin_desktop* desktop = (emwin_desktop*)data;
 	wayland_desktop* internal_desktop = (wayland_desktop*)desktop->internal_context;
+    b8 using_extension = EMTRUE;
 
 	if (strcmp(interface, "wl_compositor") == 0) {
 		internal_desktop->compositor 
@@ -81,7 +83,11 @@ void registry_global_add(void* data,
 		internal_desktop->xdg_wm_base 
 			= wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
 		xdg_wm_base_add_listener(internal_desktop->xdg_wm_base, &internal_desktop->xdg_wm_base_listener, (void*)desktop);
-	}
+	} else {
+        using_extension = EMFALSE;
+    }
+
+    EM_TRACE("Wayland", "    Found '%s' (v%i)", interface, version); 
 }
 
 // idk what this does...
@@ -97,6 +103,8 @@ em_result emnat_wayland_desktop_create(em_allocator* allocator, struct emwin_des
 	desktop->internal_context = mem_allocate(allocator, sizeof(wayland_desktop));
 	wayland_desktop* internal_desktop = (wayland_desktop*)desktop->internal_context;
 
+    EM_TRACE("Wayland", "Using internal WINDOW library: Wayland");
+
     internal_desktop->registry_listener.global        = registry_global_add;
     internal_desktop->registry_listener.global_remove = registry_global_remove;
     internal_desktop->surface_listener.configure      = configure_xdg_surface;
@@ -106,12 +114,16 @@ em_result emnat_wayland_desktop_create(em_allocator* allocator, struct emwin_des
 
     // Connect to the main Wayland object, underneath this is a UNIX socket handshake.
     internal_desktop->display = wl_display_connect(NULL);
+
+    EM_INFO("Wayland", "Connected to Wayland display");
     
     // The registry is core global object discovery mechanism. It’s how a client learns what the compositor is offering.
     internal_desktop->registry = wl_display_get_registry(internal_desktop->display);
 
     wl_registry_add_listener(internal_desktop->registry, &internal_desktop->registry_listener, (void*)desktop);
     wl_registry_set_user_data(internal_desktop->registry, (void*)desktop);
+
+    EM_TRACE("Wayland", "Loading registry:");
     
 	// Wait for all the values to fill up with useful stuff with our callbacks.
     wl_display_roundtrip(internal_desktop->display);
