@@ -87,7 +87,8 @@ void registry_global_add(void* data,
         using_extension = EMFALSE;
     }
 
-    EM_TRACE("Wayland", "    Found '%s' (v%i)", interface, version); 
+    if (using_extension)
+        EM_TRACE("Wayland", "    Found '%s'", interface); 
 }
 
 // idk what this does...
@@ -123,7 +124,7 @@ em_result emnat_wayland_desktop_create(em_allocator* allocator, struct emwin_des
     wl_registry_add_listener(internal_desktop->registry, &internal_desktop->registry_listener, (void*)desktop);
     wl_registry_set_user_data(internal_desktop->registry, (void*)desktop);
 
-    EM_TRACE("Wayland", "Loading registry:");
+    EM_INFO("Wayland", "Loading global registry...");
     
 	// Wait for all the values to fill up with useful stuff with our callbacks.
     wl_display_roundtrip(internal_desktop->display);
