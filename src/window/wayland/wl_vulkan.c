@@ -16,7 +16,7 @@ typedef struct VkWaylandSurfaceCreateInfoKHR {
 typedef VkResult (*PFN_vkCreateWaylandSurfaceKHR)(VkInstance,const VkWaylandSurfaceCreateInfoKHR*,const VkAllocationCallbacks*,VkSurfaceKHR*);
 typedef VkBool32 (*PFN_vkGetPhysicalDeviceWaylandPresentationSupportKHR)(VkPhysicalDevice,uint32_t,struct wl_display*);
 
-em_result emnat_vulkan_create_surface(VkInstance instance, VkAllocationCallbacks* allocator, emwin_window* window, VkSurfaceKHR* out_surface) {
+em_result emnat_vulkan_create_surface(VkInstance instance, VkAllocationCallbacks* allocator, const emwin_window* window, VkSurfaceKHR* out_surface) {
     wayland_window* wl_window = (wayland_window*)window->internal_context;
 
     wayland_desktop* wl_desktop = (wayland_desktop*)window->desktop->internal_context;
