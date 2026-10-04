@@ -8,7 +8,7 @@
 em_result vk_create_emwin_surface(
     emgpu_device* device,
     em_allocator* allocator,
-    emgpu_emwin_surface_config* config,
+    const emgpu_emwin_surface_config* config,
     emgpu_surface* out_surface) {
     vulkan_device* vk_device = (vulkan_device*)device->internal_context;
     
