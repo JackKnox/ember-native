@@ -449,16 +449,17 @@ em_result emgpu_device_open_queue(emgpu_device* device, emgpu_queue* out_queue) 
     return EMBER_RESULT_OK;
 }
 
-em_result emgpu_device_submit(emgpu_device* device, emgpu_queue queue, const emgpu_command_buffer* command_buf) {
+em_result emgpu_device_submit_raw(emgpu_device* device, emgpu_queue queue, const void* command_buf, u64 buffer_size, u32 resource_count) {
     vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     vulkan_command_context ctx = {};
     ctx.allocator = &device->frame_allocator;
-    ctx.command_buf = command_buf;
+    ctx.buffer = command_buf;
+    ctx.buffer_size = buffer_size;
     ctx.submissions = darray_create(vulkan_command_context, ctx.allocator);
     ctx.surfaces    = darray_create(emgpu_surface*, ctx.allocator);
     ctx.stack       = darray_create(owner_frame, ctx.allocator);
-    ctx.resource_table = mem_allocate(ctx.allocator, sizeof(managed_resource) * command_buf->current_resource_idx);
+    ctx.resource_table = mem_allocate(ctx.allocator, sizeof(managed_resource) * resource_count);
 
     // This is the big boy function; it decodes the entire command buffer and fills
     // the command context with submissions and surface calls to hand directly to the queue.

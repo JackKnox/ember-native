@@ -7,11 +7,10 @@ u64 align_command(u64 value, u64 alignment) {
 }
 
 b8 emnat_poll_command_buffer(
-    const emgpu_command_buffer* command_buf,
+    const void* buffer, u64 size,
     cmd_payload* out_cursor)
 {
-    u8* base = (u8*)command_buf->commands_buf;
-    u64 size = command_buf->buffer_size;
+    u8* base = (u8*)buffer;
     u64 offset = 0;
 
     if (out_cursor->raw_ptr != NULL) {

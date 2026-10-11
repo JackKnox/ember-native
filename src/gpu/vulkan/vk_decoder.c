@@ -119,14 +119,14 @@ static void bind_pipeline(vulkan_command_context* ctx, cmd_payload* payload) {
     vulkan_pipeline* vk_pipeline = (vulkan_pipeline*)pipeline_owner.pipeline->internal_data;
 
     // Recv import resources
-    emnat_poll_command_buffer(ctx->command_buf, payload);
+    emnat_poll_command_buffer(ctx->buffer, ctx->buffer_size, payload);
 
     const emgpu_resource_import* import = payload->imports_resources;
     for (u32 i = 0; i < payload->size / sizeof(*import); ++i, ++import)
         own_resource(ctx, import->resource, import->access_flags);
 
     // Recv export resources.
-    emnat_poll_command_buffer(ctx->command_buf, payload);
+    emnat_poll_command_buffer(ctx->buffer, ctx->buffer_size, payload);
 
     //const emgpu_resource_export* export = info->exports;
     //for (u32 i = 0; i < info->export_count; ++i, ++export)
@@ -151,7 +151,7 @@ static void begin_renderpass(vulkan_command_context* ctx, cmd_payload* payload) 
     rendering_info.layerCount = 1;
 
     // Recv colour attachments
-    emnat_poll_command_buffer(ctx->command_buf, payload);
+    emnat_poll_command_buffer(ctx->buffer, ctx->buffer_size, payload);
 
     u32 colour_attachment_count = payload->size / sizeof(emgpu_colour_attachment);
     VkRenderingAttachmentInfo* colour_attachments = darray_reserve(VkRenderingAttachmentInfo, colour_attachment_count, ctx->allocator);
@@ -220,7 +220,7 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
     vulkan_device* vk_device = (vulkan_device*)device->internal_context;
 
     cmd_payload payload = {};
-    while (emnat_poll_command_buffer(ctx->command_buf, &payload)) {
+    while (emnat_poll_command_buffer(ctx->buffer, ctx->buffer_size, &payload)) {
         vulkan_queue_family needed_queue = command_queue_family(payload.type);
         if ((!ctx->curr_submission || ctx->curr_submission->queue != needed_queue) && needed_queue != VULKAN_QUEUE_FAMILY_UNIVERSAL) {
             // Null handle allocates a new handle.

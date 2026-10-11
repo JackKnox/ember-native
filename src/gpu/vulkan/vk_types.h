@@ -42,18 +42,6 @@ typedef enum vulkan_queue_family {
 // Physical device.
 // --------------------------------------------------------
 
-/*
-
-#define DATA_ELEMENTS \
-    ELEMENT(f64, score, scores) \
-    ELEMENT(u32, family_index, family_indexes) \
-    ELEMENT(const char*, extensions, extensions) \
-    ELEMENT(b8, enabled, enables)
-#include "sossoa.h"
-
-DATA_ELEMENT_CARRAY(VULKAN_QUEUE_FAMILY_COUNT)
-*/
-
 typedef struct vulkan_sys_info {
     f64 score;
     u32 family_index;
@@ -202,7 +190,8 @@ typedef struct vulkan_command_submission {
 
 typedef struct vulkan_command_context {
     em_allocator* allocator;
-    const emgpu_command_buffer* command_buf;
+    const void* buffer;
+    u64 buffer_size;
 
     owner_frame* stack;
 

@@ -117,5 +117,5 @@ typedef struct cmd_payload {
 } cmd_payload;
 
 b8 emnat_poll_command_buffer(
-    const emgpu_command_buffer* command_buf, 
+    const void* buffer, u64 size,
     cmd_payload* out_cursor);
