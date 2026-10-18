@@ -62,8 +62,7 @@ managed_resource* own_resource(vulkan_command_context* ctx, emgpu_local_resource
     use->state.access = needed_access;
     use->state.submission_index = darray_length(ctx->submissions) - 1;
     use->state.texture_layout = vulkan_image_layout(needed_access);
-    if (owner->desc.type == COMMAND_OWNER_BINARY) 
-        use->state.binary_owner = owner->desc.binary;
+    use->state.owner = owner->desc;
 
     return &ctx->resource_table[(u32)handle]; 
 }
@@ -88,10 +87,10 @@ void release_resources(vulkan_command_context* ctx) {
         else {
             ctx->curr_submission->edge_count++;
             
-            if (prev.binary_owner != VK_NULL_HANDLE) {
+            if (prev.owner.binary != VK_NULL_HANDLE) {
                 // Semaphores.
                 VkSemaphoreSubmitInfo* semaphore_info = darray_push_empty(ctx->curr_submission->waits);
-                semaphore_info->semaphore = prev.binary_owner;
+                semaphore_info->semaphore = prev.owner.binary;
                 semaphore_info->stageMask = vulkan_wait_stage(next.access);
             }
             else {
@@ -359,7 +358,7 @@ em_result vulkan_decode_command_buffer(emgpu_device* device, vulkan_command_cont
                     "Failed to acquire next surface texture");
 
                 managed_resource frame_in_flight = {};
-                frame_in_flight.type = MANAGED_RESOURCE_BUFFER;
+                frame_in_flight.type = MANAGED_RESOURCE_TEXTURE;
                 frame_in_flight.state.access           = EMBER_ACCESS_NONE;
                 frame_in_flight.state.submission_index = -1;
                 frame_in_flight.data.texture = &vk_surface->frames_in_flight[vk_surface->image_index];

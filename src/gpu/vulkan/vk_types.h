@@ -142,11 +142,23 @@ typedef enum managed_resc_owner {
     COMMAND_OWNER_BINARY,
 } managed_resc_owner;
 
+typedef struct owner_desc {
+    managed_resc_owner type;
+
+    union {
+        const emgpu_pipeline* pipeline;
+        VkSemaphore binary;
+    };
+} owner_desc;
+
+// How a resource CURRENTLY is at any given time in the submission.
+// NOTE: it is a reflection of only the state of a resource and not ITS TYPE OR CONTENTS.
+// NOTE: it does not reflect the state of its owner, if state can be grouped based purely on a resources owner, put it in the owner struct.
 typedef struct resource_state {
     emgpu_access_flags access;
     i32 submission_index; // -1 means it's irrevent.
     VkImageLayout texture_layout; // Valid only when resource is a texture
-    VkSemaphore binary_owner;
+    owner_desc owner;
 } resource_state;
 
 typedef struct managed_resource {
@@ -162,15 +174,6 @@ typedef struct resource_use {
     emgpu_local_resource resource;
     resource_state state;
 } resource_use;
-
-typedef struct owner_desc {
-    managed_resc_owner type;
-
-    union {
-        const emgpu_pipeline* pipeline;
-        VkSemaphore binary;
-    };
-} owner_desc;
 
 typedef struct owner_frame {
     owner_desc desc;
