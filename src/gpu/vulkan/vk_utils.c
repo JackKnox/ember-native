@@ -132,6 +132,9 @@ u32 score_phys_device(vulkan_phys_device* device) {
 }
 
 f64 score_queue_type(VkQueueFamilyProperties* queue_family, vulkan_queue_family queue_type) {
+    if (queue_family->queueCount == 0)
+        return 0.0;
+
     f64 queue_types = 0;
     if (queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT) ++queue_types;    
     if (queue_family->queueFlags & VK_QUEUE_COMPUTE_BIT)  ++queue_types;
@@ -337,6 +340,15 @@ VkColorSpaceKHR vulkan_format_colour_space(emgpu_format format) {
 
 VkPipelineStageFlags2 vulkan_wait_stage(emgpu_access_flags access) {
      return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+}
+
+VkAccessFlags2 vulkan_access_flags(emgpu_access_flags access) {
+    VkAccessFlags2 flags = VK_ACCESS_2_NONE;
+    if (access & EMBER_ACCESS_SHADER_WRITE) flags |= VK_ACCESS_2_SHADER_WRITE_BIT;
+    if (access & EMBER_ACCESS_SHADER_READ) flags |= VK_ACCESS_2_SHADER_READ_BIT;
+    if (access & EMBER_ACCESS_VERTEX_ATTRIBUTE_READ) flags |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+    if (access & EMBER_ACCESS_COLOUR_ATTACHMENT_WRITE) flags |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    return flags;
 }
 
 VkImageLayout vulkan_image_layout(emgpu_access_flags access) {

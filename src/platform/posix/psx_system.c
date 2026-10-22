@@ -19,7 +19,7 @@ void* system_malloc(em_allocator* allocator, u64 size, u64 alignment) {
 
     void* ptr = NULL;
     if (posix_memalign(&ptr, alignment, size) != 0) return NULL;
-    return ptr;
+    return memset(ptr, 0, size);
 }
 
 void system_free(em_allocator* allocator, void* block, u64 size, u64 alignment) {

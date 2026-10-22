@@ -1,4 +1,5 @@
 #include "defines.h"
+#include "ember/core.h"
 #include "vk_types.h"
 
 #include "utils/darray.h"
@@ -23,6 +24,15 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
 	}
 
 	return VK_FALSE;
+}
+
+vulkan_device_ext* vulkan_device_default_extensions(vulkan_device* vk_device, em_allocator* allocator) {
+    vulkan_device_ext ext[] = { 
+        { .name = "VK_KHR_synchronization2", .optional = EMFALSE },
+        { .name = "VK_KHR_timeline_semaphore", .optional = EMFALSE },
+        { .name = "VK_KHR_swapchain", .optional = !vk_device->wsi.requested }
+    };
+    return darray_from_data(vulkan_device_ext, EM_ARRAYSIZE(ext), ext, allocator);
 }
 
 em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* config, emgpu_device* out_device) {
@@ -127,8 +137,6 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     
     EM_TRACE("Vulkan", "Created Vulkan instance with %i extension(s)", darray_length(required_extensions));
 
-    // TODO: Setup validation layers, Ember is supposed to be the ultimate solution and not another common API lib
-    //       so this isn't very important except for development.
     VkDebugUtilsMessengerCreateInfoEXT debug_create_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
     debug_create_info.messageSeverity = 
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -187,13 +195,15 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     
     // Just generally useful for iteration.
     u32 combined_modes = (config->required_modes | config->optional_modes);
+
+    VkExtensionProperties* device_extensions = darray_create(VkExtensionProperties, allocator);
         
     for (u32 i = 0; i < physical_device_count; ++i) {
         // Retrieve all useful data about the device for checking later.
         //
         vulkan_phys_device curr_device = {};
         curr_device.handle = physical_devices[i];
-        
+        curr_device.extensions = darray_create(const char*, allocator);
         vulkan_device_from_capabilities(&curr_device, &curr_device.capabilities);
 
         u32 queue_family_count = 0;
@@ -201,8 +211,26 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
         VkQueueFamilyProperties* queue_families = darray_from_data(VkQueueFamilyProperties, queue_family_count, NULL, allocator);
         vkGetPhysicalDeviceQueueFamilyProperties(curr_device.handle, &queue_family_count, queue_families);
 
+        u32 device_extension_count = 0;
+        VkResult result = vkEnumerateDeviceExtensionProperties(curr_device.handle, NULL, &device_extension_count, NULL);
+
+        if (result != VK_SUCCESS) {
+            EM_ERROR("Vulkan", "Failed to enumerate device extension count.");
+            goto next;
+        }
+
+        device_extensions = darray_resize(device_extensions, device_extension_count);
+        darray_length(device_extensions) = device_extension_count;
+
+        result = vkEnumerateDeviceExtensionProperties(curr_device.handle, NULL, &device_extension_count, device_extensions);
+
+        if (result != VK_SUCCESS) {
+            EM_ERROR("Vulkan", "Failed to enumerate device extensions.");
+            goto next;
+        }
+
         // We rate the queue families to find which one is best to use
-        // queues on. We rate each queue family for each type it supports/
+        // queues on. We rate each queue family for each type it supports
         for (u32 i = 0; i < queue_family_count; ++i) {
             VkQueueFamilyProperties* queue_family = &queue_families[i];
 
@@ -220,6 +248,8 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 }
             }
         }
+
+        darray_destroy(queue_families);
 
         EM_INFO("Vulkan", "Checking physical device with name: '%s'", curr_device.capabilities.device_name);
         
@@ -241,7 +271,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
             if (!raster.enabled) {
                 if (config->required_modes & EMBER_DEVICE_MODE_RASTER) {
                     EM_ERROR("Vulkan", "Skipping device: required raster mode is unavailable.");
-                    continue;
+                    goto next;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_RASTER) {
@@ -265,7 +295,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
             if (!compute.enabled) {
                 if (config->required_modes & EMBER_DEVICE_MODE_COMPUTE) {
                     EM_ERROR("Vulkan", "Skipping device: required compute mode is unavailable.");
-                    continue;
+                    goto next;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_COMPUTE) {
@@ -289,7 +319,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
             if (!transfer.enabled) {
                 if (config->required_modes & EMBER_DEVICE_MODE_TRANSFER) {
                     EM_ERROR("Vulkan", "Skipping device: required transfer mode is unavailable.");
-                    continue;
+                    goto next;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_TRANSFER) {
@@ -317,7 +347,7 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
             if (!sampler_anisotropy_supported ) {
                 if (config->required_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY) {
                     EM_ERROR("Vulkan", "Skipping device: required sampler anisotropy mode is unavailable.");
-                    continue;
+                    goto next;
                 }
 
                 if (config->optional_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY) {
@@ -327,11 +357,61 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
                 curr_device.capabilities.enabled_modes |= EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY; 
             }
         }
-    
+
+        // Default extensions for the vulkan device excluding the requested systems.
+        // Includes sync2, timelineSemaphore and swapchain.
+        vulkan_device_ext* extensions = vulkan_device_default_extensions(vk_device, allocator);
+
+        for (u32 i = 0; i < EM_ARRAYSIZE(curr_device.phys_modes); ++i) {
+            vulkan_sys_info* sys = &curr_device.phys_modes[i];
+            if (!sys->enabled || !sys->extensions) continue;
+
+            vulkan_device_ext* ext = darray_push_empty(extensions);
+            ext->name = sys->extensions;
+            ext->optional = EMFALSE;
+        }
+
+        b8 supports_extensions = EMTRUE;
+        for (u32 i = 0; i < darray_length(extensions); ++i) {
+            b8 found = EMFALSE;
+            for (u32 j = 0; j < darray_length(device_extensions); ++j) {
+                if (strcmp(extensions[i].name, device_extensions[j].extensionName) == 0) {
+                    found = EMTRUE;
+                    break;
+                }
+            }
+
+            if (!found) {
+                if (!extensions[i].optional) {
+                    EM_ERROR("Vulkan", "Required Vulkan extension is missing: %s.", extensions[i].name);
+                    supports_extensions = EMFALSE;
+                }
+
+                continue;
+            }
+            
+            darray_push(curr_device.extensions, extensions[i].name);
+        }
+
+        // Destroy temp data.
+        darray_destroy(extensions);
+        if (!supports_extensions) goto next;
+       
         // After we've checked the device is suitable, score it against all the other suitable GPUs.
         if (!chosen_device.handle ||
-            curr_device.heuristic > chosen_device.heuristic)
+            curr_device.heuristic > chosen_device.heuristic) {
+
+            if (chosen_device.handle) {
+                darray_destroy(chosen_device.extensions);
+            }
+
             chosen_device = curr_device;
+            continue;
+        }
+
+next:
+        // Destroy extensions struct.
+        if (curr_device.extensions) darray_destroy(curr_device.extensions);
     }
     
     if (!chosen_device.handle) {
@@ -374,8 +454,11 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     EM_TRACE("Vulkan", "Requesting %i unique queue families.", darray_length(queue_create_infos));
     
     // Fill create info
+    
+    // We can request these without thought becuase we have alreadfy checked existance of device extensions
+    // which infers that these are supported.
     VkPhysicalDeviceVulkan13Features dynamic_rendering = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-    dynamic_rendering.dynamicRendering = EMTRUE;
+    if (chosen_device.capabilities.enabled_modes & EMBER_DEVICE_MODE_RASTER) dynamic_rendering.dynamicRendering = EMTRUE;
     dynamic_rendering.synchronization2 = EMTRUE;
 
     VkPhysicalDeviceVulkan12Features timeline_semaphores = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
@@ -383,15 +466,14 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     timeline_semaphores.timelineSemaphore = EMTRUE;
 
     VkPhysicalDeviceFeatures device_features = {};
-
-    const char* device_extensions[] = { "VK_KHR_dynamic_rendering", "VK_KHR_swapchain" };
+    device_features.samplerAnisotropy = chosen_device.capabilities.enabled_modes & EMBER_DEVICE_MODE_SAMPLER_ANISOTROPY;
 
     VkDeviceCreateInfo device_create_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
     device_create_info.pNext = &timeline_semaphores;
     device_create_info.queueCreateInfoCount = darray_length(queue_create_infos);
     device_create_info.pQueueCreateInfos = queue_create_infos;
-    device_create_info.enabledExtensionCount = EM_ARRAYSIZE(device_extensions);
-    device_create_info.ppEnabledExtensionNames = device_extensions;
+    device_create_info.enabledExtensionCount = darray_length(chosen_device.extensions);
+    device_create_info.ppEnabledExtensionNames = chosen_device.extensions;
     device_create_info.pEnabledFeatures = &device_features;
 
     CHECK_VKRESULT(
@@ -401,10 +483,13 @@ em_result emgpu_device_init(em_allocator* allocator, const emgpu_device_config* 
     vk_device->physical = chosen_device.handle;
     
     // Destroy temp data.
+    darray_destroy(chosen_device.extensions);
     darray_destroy(queue_create_infos);
+    darray_destroy(device_extensions);
 
     for (u32 i = 0; i < EM_ARRAYSIZE(chosen_device.phys_modes); ++i) {
         vulkan_sys_info* mode_info = &chosen_device.phys_modes[i];
+        if (!mode_info->enabled) continue;
 
         vulkan_sys_state* new_state = &vk_device->modes[i];
         new_state->family_index = chosen_device.phys_modes[i].family_index;
@@ -456,8 +541,8 @@ em_result emgpu_device_submit_raw(emgpu_device* device, emgpu_queue queue, const
     ctx.allocator = &device->frame_allocator;
     ctx.buffer = command_buf;
     ctx.buffer_size = buffer_size;
-    ctx.submissions = darray_create(vulkan_command_context, ctx.allocator);
-    ctx.surfaces    = darray_create(emgpu_surface*, ctx.allocator);
+    ctx.submissions = darray_create(vulkan_command_submission, ctx.allocator);
+    ctx.surfaces    = darray_create(vulkan_command_surface, ctx.allocator);
     ctx.stack       = darray_create(owner_frame, ctx.allocator);
     ctx.resource_table = mem_allocate(ctx.allocator, sizeof(managed_resource) * resource_count);
 
@@ -488,7 +573,7 @@ em_result emgpu_device_submit_raw(emgpu_device* device, emgpu_queue queue, const
     }
 
     for (u32 i = 0; i < darray_length(ctx.surfaces); ++i) {
-        emgpu_surface* surface = ctx.surfaces[i];
+        emgpu_surface* surface = ctx.surfaces[i].surface;
         vulkan_surface* vk_surface = (vulkan_surface*)surface->internal_data;
 
         VkPresentInfoKHR present_info = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
@@ -519,6 +604,7 @@ em_result emgpu_device_get_capabilities(emgpu_device* device, emgpu_device_capab
 vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device) {
     vulkan_sys_info info = {};
     info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_RASTER].enabled;
+    info.family_index = device->phys_modes[VULKAN_QUEUE_FAMILY_RASTER].family_index;
     info.extensions = VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME;
     return info;
 }
@@ -527,6 +613,7 @@ vulkan_sys_info vulkan_raster_setup(vulkan_phys_device* device) {
 vulkan_sys_info vulkan_compute_setup(vulkan_phys_device* device) {
     vulkan_sys_info info = {};
     info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_COMPUTE].enabled;
+    info.family_index = device->phys_modes[VULKAN_QUEUE_FAMILY_COMPUTE].family_index;
     return info;
 }
 
@@ -534,5 +621,6 @@ vulkan_sys_info vulkan_compute_setup(vulkan_phys_device* device) {
 vulkan_sys_info vulkan_transfer_setup(vulkan_phys_device* device) {
     vulkan_sys_info info = {};
     info.enabled    = device->phys_modes[VULKAN_QUEUE_FAMILY_TRANSFER].enabled;
+    info.family_index = device->phys_modes[VULKAN_QUEUE_FAMILY_TRANSFER].family_index;
     return info;
 }

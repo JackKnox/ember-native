@@ -46,6 +46,9 @@ void           darray_pop_at(void* array, u32 index, void* dest);
 #define darray_clear(array) \
     _darray_header(array)->length = 0
 
+#define darray_pop(array, dest) \
+    darray_pop_at(array, darray_length(array) - 1, dest)
+
 #define darray_length(array) (_darray_header(array)->length)
 
 #define darray_capacity(array) (_darray_header(array)->capacity)

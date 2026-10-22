@@ -45,6 +45,10 @@ option(EMBER_NATIVE_POISON_MEMORY          "Poison freed/uninitialized memory"  
 
 add_subdirectory(src)
 
+if (MAIN_PROJECT)
+    add_subdirectory(tests)
+endif()
+
 # Force a user to download the Ember headers seperatly
 if (MAIN_PROJECT)
     FetchContent_Declare(

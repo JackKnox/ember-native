@@ -49,9 +49,15 @@ typedef struct vulkan_sys_info {
     b8 enabled;
 } vulkan_sys_info;
 
+typedef struct vulkan_device_ext {
+    const char* name;
+    b8 optional;
+} vulkan_device_ext;
+
 typedef struct vulkan_phys_device {
     VkPhysicalDevice handle;
     emgpu_device_capabilities capabilities;
+    const char** extensions;
     vulkan_sys_info phys_modes[VULKAN_QUEUE_FAMILY_COUNT];
     i32 heuristic;
 } vulkan_phys_device;
@@ -137,6 +143,7 @@ typedef enum managed_resc_type {
 } managed_resc_type;
 
 typedef enum managed_resc_owner {
+    COMMAND_OWNER_NONE,
     COMMAND_OWNER_PIPELINE,
     COMMAND_OWNER_RENDERPASS,
     COMMAND_OWNER_BINARY,
@@ -191,6 +198,11 @@ typedef struct vulkan_command_submission {
     VkSemaphoreSubmitInfo* signals;
 } vulkan_command_submission;
 
+typedef struct vulkan_command_surface {
+    emgpu_local_framebuffer resource;
+    emgpu_surface* surface;
+} vulkan_command_surface;
+
 typedef struct vulkan_command_context {
     em_allocator* allocator;
     const void* buffer;
@@ -200,7 +212,7 @@ typedef struct vulkan_command_context {
 
     managed_resource* resource_table;
 
-    emgpu_surface** surfaces;
+    vulkan_command_surface* surfaces;
 
     vulkan_command_submission* curr_submission;
     vulkan_command_submission* submissions;
@@ -230,6 +242,8 @@ typedef struct vulkan_device {
     vulkan_sys_state modes[VULKAN_QUEUE_FAMILY_COUNT];
     vulkan_wsi wsi;
 } vulkan_device;
+
+#define EMNAT_VULKAN_ACCESS_PRESENT_SRC 1 << 31
 
 // Main entry points for device modes.
 // --------------------------------------------------------
@@ -307,6 +321,9 @@ VkColorSpaceKHR vulkan_format_colour_space(emgpu_format format);
 
 // Finds ths stage wait flags for the needed access to resource.
 VkPipelineStageFlags2 vulkan_wait_stage(emgpu_access_flags access);
+
+// Converts Ember access flags to Vulkan pipeline sync2 access flags.
+VkAccessFlags2 vulkan_access_flags(emgpu_access_flags access);
 
 // Finds the nessacery image layout for a access flag, mearly a suggestion
 // if the texture already has a supported image layout it will fall through.
